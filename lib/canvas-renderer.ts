@@ -153,52 +153,8 @@ export function renderPoster(
   canvas.width = width
   canvas.height = height
 
-  // Full-bleed: no padding — bg.png sits on top as a frame
+  // Initial cover-fit (may be adjusted for overlay alignment)
   const cover = getCoverCoords(image.width, image.height, width, height)
-
-  // ── 1) Dark base fill ───────────────────────────────────────────
-  ctx.fillStyle = "#111111"
-  ctx.fillRect(0, 0, width, height)
-
-  // ── 2) Speaker image as blurred B&W background, full bleed
-  // Draw at EXACT cover coords first (no offset) so overlay mapping is aligned
-  {
-    // First draw sharp at exact position to an offscreen canvas
-    const sharpOff = document.createElement("canvas")
-    sharpOff.width = width
-    sharpOff.height = height
-    const sharpCtx = sharpOff.getContext("2d")!
-    sharpCtx.fillStyle = "#111111"
-    sharpCtx.fillRect(0, 0, width, height)
-    sharpCtx.drawImage(
-      image,
-      cover.sx, cover.sy, cover.sw, cover.sh,
-      0, 0, width, height
-    )
-
-    // Then draw that sharp result with blur + grayscale into another canvas
-    // Using a larger canvas to avoid blur edge artifacts
-    const pad = filter.bgBlur * 3
-    const blurOff = document.createElement("canvas")
-    blurOff.width = width + pad * 2
-    blurOff.height = height + pad * 2
-    const blurCtx = blurOff.getContext("2d")!
-    blurCtx.fillStyle = "#111111"
-    blurCtx.fillRect(0, 0, blurOff.width, blurOff.height)
-    blurCtx.filter = `grayscale(100%) blur(${filter.bgBlur}px) brightness(0.3)`
-    blurCtx.drawImage(sharpOff, pad, pad)
-    blurCtx.filter = "none"
-
-    // Crop back to original size from the center (removing blur edge)
-    ctx.drawImage(
-      blurOff,
-      pad, pad, width, height,
-      0, 0, width, height
-    )
-  }
-
-  // Background grain
-  tileGrain(ctx, 0, 0, width, height, filter.bgGrain)
 
   // ── 3) Determine crop region based on template ─────────────────
   let cropRegion: FaceBox
@@ -215,13 +171,43 @@ export function renderPoster(
   const boxMargin = width * 0.04
   const boxMaxWidth = width * 0.48
   const boxMaxHeight = height * 0.45
-  const minTopMargin = height * 0.10   // never clip above this line
-  const minBottomMargin = height * 0.38 // leave room for portrait + text
+  const minTopMargin = height * 0.10
+  const minBottomMargin = height * 0.38
 
   let boxX: number, boxY: number, boxWidth: number, boxHeight: number
 
   if (filter.overlay) {
-    // Map face crop to its real position in the poster
+    // Map face crop to its natural position in the poster
+    const initial = imgToCanvas(
+      clamped.x, clamped.y, clamped.width, clamped.height,
+      width, height, cover
+    )
+    boxX = initial.x
+    boxY = initial.y
+    boxWidth = initial.w
+    boxHeight = initial.h
+
+    // If the box overflows top or bottom, shift the COVER source offset
+    // so the background image AND box move together (maintaining alignment)
+    const safeTop = minTopMargin
+    const safeBottom = height - minBottomMargin
+
+    if (boxY < safeTop) {
+      // Face is too high -- shift cover.sy DOWN (reveal lower part of image)
+      const shiftCanvas = safeTop - boxY
+      const scaleY = cover.sh / height
+      cover.sy += shiftCanvas * scaleY
+      // Clamp cover.sy to not go past image
+      cover.sy = Math.min(cover.sy, image.height - cover.sh)
+    } else if (boxY + boxHeight > safeBottom) {
+      // Face is too low -- shift cover.sy UP
+      const shiftCanvas = (boxY + boxHeight) - safeBottom
+      const scaleY = cover.sh / height
+      cover.sy -= shiftCanvas * scaleY
+      cover.sy = Math.max(0, cover.sy)
+    }
+
+    // Now remap with the adjusted cover -- both BG and box use this
     const mapped = imgToCanvas(
       clamped.x, clamped.y, clamped.width, clamped.height,
       width, height, cover
@@ -231,16 +217,8 @@ export function renderPoster(
     boxWidth = mapped.w
     boxHeight = mapped.h
 
-    // Clamp box to stay fully inside canvas with margins
-    if (boxY < minTopMargin) {
-      boxY = minTopMargin
-    }
-    if (boxY + boxHeight > height - minBottomMargin) {
-      boxHeight = height - minBottomMargin - boxY
-    }
-    if (boxX < boxMargin) {
-      boxX = boxMargin
-    }
+    // Also clamp horizontally
+    if (boxX < boxMargin) boxX = boxMargin
     if (boxX + boxWidth > width - boxMargin) {
       boxWidth = width - boxMargin - boxX
     }
@@ -257,6 +235,46 @@ export function renderPoster(
     boxX = width - boxWidth - boxMargin
     boxY = minTopMargin
   }
+
+  // ── 1) Dark base fill ───────────────────────────────────────────
+  ctx.fillStyle = "#111111"
+  ctx.fillRect(0, 0, width, height)
+
+  // ── 2) Speaker image as blurred B&W background, full bleed
+  // Uses the (possibly adjusted) cover coords so BG aligns with overlay box
+  {
+    const sharpOff = document.createElement("canvas")
+    sharpOff.width = width
+    sharpOff.height = height
+    const sharpCtx = sharpOff.getContext("2d")!
+    sharpCtx.fillStyle = "#111111"
+    sharpCtx.fillRect(0, 0, width, height)
+    sharpCtx.drawImage(
+      image,
+      cover.sx, cover.sy, cover.sw, cover.sh,
+      0, 0, width, height
+    )
+
+    const pad = filter.bgBlur * 3
+    const blurOff = document.createElement("canvas")
+    blurOff.width = width + pad * 2
+    blurOff.height = height + pad * 2
+    const blurCtx = blurOff.getContext("2d")!
+    blurCtx.fillStyle = "#111111"
+    blurCtx.fillRect(0, 0, blurOff.width, blurOff.height)
+    blurCtx.filter = `grayscale(100%) blur(${filter.bgBlur}px) brightness(0.3)`
+    blurCtx.drawImage(sharpOff, pad, pad)
+    blurCtx.filter = "none"
+
+    ctx.drawImage(
+      blurOff,
+      pad, pad, width, height,
+      0, 0, width, height
+    )
+  }
+
+  // Background grain
+  tileGrain(ctx, 0, 0, width, height, filter.bgGrain)
 
   // ── 5) Draw the grayscale + tinted face crop into box ──────────
   {
