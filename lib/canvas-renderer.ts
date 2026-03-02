@@ -161,27 +161,40 @@ export function renderPoster(
   ctx.fillRect(0, 0, width, height)
 
   // ── 2) Speaker image as blurred B&W background, full bleed
+  // Draw at EXACT cover coords first (no offset) so overlay mapping is aligned
   {
-    const bgOff = document.createElement("canvas")
-    bgOff.width = width
-    bgOff.height = height
-    const bgCtx = bgOff.getContext("2d")!
-
-    bgCtx.fillStyle = "#111111"
-    bgCtx.fillRect(0, 0, width, height)
-
-    const blurPad = filter.bgBlur * 2
-    bgCtx.filter = `grayscale(100%) blur(${filter.bgBlur}px) brightness(0.3)`
-    bgCtx.drawImage(
+    // First draw sharp at exact position to an offscreen canvas
+    const sharpOff = document.createElement("canvas")
+    sharpOff.width = width
+    sharpOff.height = height
+    const sharpCtx = sharpOff.getContext("2d")!
+    sharpCtx.fillStyle = "#111111"
+    sharpCtx.fillRect(0, 0, width, height)
+    sharpCtx.drawImage(
       image,
       cover.sx, cover.sy, cover.sw, cover.sh,
-      -blurPad, -blurPad,
-      width + blurPad * 2,
-      height + blurPad * 2
+      0, 0, width, height
     )
-    bgCtx.filter = "none"
 
-    ctx.drawImage(bgOff, 0, 0)
+    // Then draw that sharp result with blur + grayscale into another canvas
+    // Using a larger canvas to avoid blur edge artifacts
+    const pad = filter.bgBlur * 3
+    const blurOff = document.createElement("canvas")
+    blurOff.width = width + pad * 2
+    blurOff.height = height + pad * 2
+    const blurCtx = blurOff.getContext("2d")!
+    blurCtx.fillStyle = "#111111"
+    blurCtx.fillRect(0, 0, blurOff.width, blurOff.height)
+    blurCtx.filter = `grayscale(100%) blur(${filter.bgBlur}px) brightness(0.3)`
+    blurCtx.drawImage(sharpOff, pad, pad)
+    blurCtx.filter = "none"
+
+    // Crop back to original size from the center (removing blur edge)
+    ctx.drawImage(
+      blurOff,
+      pad, pad, width, height,
+      0, 0, width, height
+    )
   }
 
   // Background grain
@@ -191,6 +204,8 @@ export function renderPoster(
   let cropRegion: FaceBox
   if (template === "eyes") {
     cropRegion = detection.eyesRegion
+  } else if (template === "smile") {
+    cropRegion = detection.smileRegion
   } else {
     cropRegion = detection.rightHalfBox
   }

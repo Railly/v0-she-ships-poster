@@ -32,10 +32,11 @@ export interface FaceDetectionResult {
   faceBox: FaceBox
   rightHalfBox: FaceBox
   eyesRegion: EyesRegion
+  smileRegion: FaceBox
   landmarks: { x: number; y: number }[]
 }
 
-export type TemplateType = "half-face" | "eyes"
+export type TemplateType = "half-face" | "eyes" | "smile"
 
 export interface PosterOptions {
   speaker: SpeakerData

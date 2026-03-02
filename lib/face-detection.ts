@@ -103,5 +103,24 @@ export async function detectFace(
     height: eyeHeight + padY * 2,
   }
 
-  return { faceBox, rightHalfBox, eyesRegion, landmarks }
+  // Smile / mouth region: landmarks 48-67 (outer + inner lips)
+  const mouthPoints = landmarks.slice(48, 68)
+  const mMinX = Math.min(...mouthPoints.map((p: { x: number }) => p.x))
+  const mMaxX = Math.max(...mouthPoints.map((p: { x: number }) => p.x))
+  const mMinY = Math.min(...mouthPoints.map((p: { y: number }) => p.y))
+  const mMaxY = Math.max(...mouthPoints.map((p: { y: number }) => p.y))
+
+  const mWidth = mMaxX - mMinX
+  const mHeight = mMaxY - mMinY
+  const mPadX = mWidth * 0.6
+  const mPadY = mHeight * 1.0
+
+  const smileRegion: FaceBox = {
+    x: mMinX - mPadX,
+    y: mMinY - mPadY,
+    width: mWidth + mPadX * 2,
+    height: mHeight + mPadY * 2,
+  }
+
+  return { faceBox, rightHalfBox, eyesRegion, smileRegion, landmarks }
 }

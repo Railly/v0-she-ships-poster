@@ -1,6 +1,6 @@
 "use client"
 
-import { Download, Eye, ScanFace, Loader2 } from "lucide-react"
+import { Download, Eye, ScanFace, Smile, Loader2 } from "lucide-react"
 import type { TemplateType, FilterSettings } from "@/lib/types"
 
 interface PosterControlsProps {
@@ -40,7 +40,7 @@ export function PosterControls({
         Template
       </h2>
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         <button
           type="button"
           onClick={() => onTemplateChange("half-face")}
@@ -64,6 +64,18 @@ export function PosterControls({
         >
           <Eye className="h-5 w-5" />
           Eyes Only
+        </button>
+        <button
+          type="button"
+          onClick={() => onTemplateChange("smile")}
+          className={`flex flex-col items-center gap-2 rounded border px-3 py-3 text-[10px] font-mono uppercase tracking-wider transition-colors cursor-pointer ${
+            template === "smile"
+              ? "border-[#E49BC2] bg-[#E49BC2]/10 text-[#E49BC2]"
+              : "border-[#333] bg-[#1a1a1a] text-[#a0a0a0] hover:border-[#555]"
+          }`}
+        >
+          <Smile className="h-5 w-5" />
+          Smile
         </button>
       </div>
 
