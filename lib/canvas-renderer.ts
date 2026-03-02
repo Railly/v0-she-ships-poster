@@ -160,24 +160,15 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
   let boxX: number, boxY: number, boxW: number, boxH: number
 
   if (filter.overlay) {
-    // Natural position from imgToCanvas -- this ALWAYS matches the BG
-    // because both use the same cover coords. Do NOT clamp position,
-    // only cap size. This guarantees perfect alignment.
+    // Use EXACT natural position + size from imgToCanvas.
+    // Both the BG and the box use the same cover coords, so this
+    // guarantees pixel-perfect alignment. No size capping -- the
+    // detection regions already produce reasonable proportions.
     const nat = imgToCanvas(
       clamped.x, clamped.y, clamped.width, clamped.height,
       width, height, cover
     )
     boxX = nat.x; boxY = nat.y; boxW = nat.w; boxH = nat.h
-
-    if (template === "half-face") {
-      const maxW = width * 0.35, maxH = height * 0.55
-      if (boxW > maxW) { const s = maxW / boxW; boxW *= s; boxH *= s }
-      if (boxH > maxH) { const s = maxH / boxH; boxW *= s; boxH *= s }
-    } else {
-      const maxW = width * 0.65, maxH = height * 0.28
-      if (boxW > maxW) { const s = maxW / boxW; boxW *= s; boxH *= s }
-      if (boxH > maxH) { const s = maxH / boxH; boxW *= s; boxH *= s }
-    }
   } else {
     if (template === "half-face") {
       boxH = height * 0.55; boxW = boxH * cropAspect
@@ -284,8 +275,8 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
   const nameRoleGap = nameFontSize * 0.6
   const nameBottomY = roleStartY - nameRoleGap
   const nameTopY = nameBottomY - nameBlockH + nameFontSize
-  // Portrait sits well above the name with generous spacing
-  const portraitGap = nameFontSize * 1.2
+  // Portrait sits above the name with moderate spacing
+  const portraitGap = nameFontSize * 0.5
   const pY = nameTopY - nameFontSize - portraitGap - pH
   const pX = margin
 
