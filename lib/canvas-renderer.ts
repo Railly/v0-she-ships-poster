@@ -225,13 +225,36 @@ export function renderPoster(
   ctx.fillRect(0, 0, width, height)
 
   // ── 2) Speaker image as blurred B&W background
-  // Draw with the SAME offset as the overlay box so they stay aligned
+  // The face must align with the overlay box (bgOffsetX/Y shifts both).
+  // To avoid black gaps caused by the offset, we expand the source crop
+  // region in image-space to cover the extra area, then draw at (0,0).
   {
-    // Draw sharp image at cover-fit position + offset onto a large canvas
-    // (larger to avoid blur clipping at edges)
     const pad = Math.max(filter.bgBlur * 3, 40)
     const bigW = width + pad * 2
     const bigH = height + pad * 2
+
+    // Convert canvas-space offset to image-space expansion
+    const scaleX = cover.sw / width
+    const scaleY = cover.sh / height
+
+    // Expand source rect: if offset is positive (image pushed down),
+    // we need more source pixels ABOVE (lower sy) to fill the top gap
+    let exSx = cover.sx - Math.max(0, bgOffsetX) * scaleX
+    let exSy = cover.sy - Math.max(0, bgOffsetY) * scaleY
+    let exSw = cover.sw + Math.abs(bgOffsetX) * scaleX
+    let exSh = cover.sh + Math.abs(bgOffsetY) * scaleY
+
+    // Clamp to image bounds
+    if (exSx < 0) { exSw += exSx; exSx = 0 }
+    if (exSy < 0) { exSh += exSy; exSy = 0 }
+    exSw = Math.min(exSw, image.width - exSx)
+    exSh = Math.min(exSh, image.height - exSy)
+
+    // Destination: the expanded area maps to poster + the offset gap
+    const dstW = exSw / scaleX
+    const dstH = exSh / scaleY
+    const dstX = (exSx - cover.sx) / scaleX + bgOffsetX
+    const dstY = (exSy - cover.sy) / scaleY + bgOffsetY
 
     const sharpOff = document.createElement("canvas")
     sharpOff.width = bigW
@@ -239,11 +262,10 @@ export function renderPoster(
     const sharpCtx = sharpOff.getContext("2d")!
     sharpCtx.fillStyle = "#111111"
     sharpCtx.fillRect(0, 0, bigW, bigH)
-    // Draw at pad + offset so the face lines up when we crop back
     sharpCtx.drawImage(
       image,
-      cover.sx, cover.sy, cover.sw, cover.sh,
-      pad + bgOffsetX, pad + bgOffsetY, width, height
+      exSx, exSy, exSw, exSh,
+      pad + dstX, pad + dstY, dstW, dstH
     )
 
     // Apply blur + grayscale
@@ -257,7 +279,7 @@ export function renderPoster(
     blurCtx.drawImage(sharpOff, 0, 0)
     blurCtx.filter = "none"
 
-    // Crop the center (poster-sized area) back onto the main canvas
+    // Crop poster-sized area back
     ctx.drawImage(
       blurOff,
       pad, pad, width, height,
