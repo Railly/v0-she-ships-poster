@@ -244,10 +244,11 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
   const clamped = clampBox(cropRegion, image.width, image.height)
 
   // ── COMPUTE BOX POSITION ──────────────────────────────────────
-  // BG is always static (top-aligned, no offset). Only the box moves.
   const margin = width * 0.06
   const cropAspect = clamped.width / clamped.height
   let boxX: number, boxY: number, boxW: number, boxH: number
+  let bgOffsetX = 0
+  let bgOffsetY = 0
 
   if (filter.overlay) {
     // Natural position from imgToCanvas -- matches the BG since both
@@ -302,8 +303,8 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
     }
   }
 
-  // ── 1) DRAW BACKGROUND ────────────���─────────────────────────────
-  drawBackground(ctx, image, cover, width, height, filter)
+  // ── 1) DRAW BACKGROUND ─────────────────────────────────────────
+  drawBackground(ctx, image, cover, width, height, filter, bgOffsetX, bgOffsetY)
   tileGrain(ctx, 0, 0, width, height, filter.bgGrain)
 
   // ── 2) TINTED FACE CROP BOX ────────────────────────────────────
