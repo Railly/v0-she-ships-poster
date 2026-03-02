@@ -318,8 +318,9 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
   const slackY = image.height - zoomedSh
   const centerSx = baseCover.sx + (baseCover.sw - zoomedSw) / 2
   const centerSy = baseCover.sy + (baseCover.sh - zoomedSh) / 2
-  const panOffsetX = (filter.panX / 100) * (slackX / 2)
-  const panOffsetY = (filter.panY / 100) * (slackY / 2)
+  // Negate so dragging right moves the image right (source crop goes left)
+  const panOffsetX = -(filter.panX / 100) * (slackX / 2)
+  const panOffsetY = -(filter.panY / 100) * (slackY / 2)
   const rawSx = centerSx + panOffsetX
   const rawSy = centerSy + panOffsetY
 
