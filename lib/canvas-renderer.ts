@@ -171,8 +171,9 @@ export function renderPoster(
   const boxMargin = width * 0.04
   const boxMaxWidth = width * 0.48
   const boxMaxHeight = height * 0.45
-  const minTopMargin = height * 0.10
-  const minBottomMargin = height * 0.38
+  // Reserve enough top space for the badge + SS logo area in bg.png
+  const minTopMargin = height * 0.13
+  const minBottomMargin = height * 0.36
 
   let boxX: number, boxY: number, boxWidth: number, boxHeight: number
 
@@ -182,32 +183,35 @@ export function renderPoster(
       clamped.x, clamped.y, clamped.width, clamped.height,
       width, height, cover
     )
-    boxX = initial.x
-    boxY = initial.y
-    boxWidth = initial.w
-    boxHeight = initial.h
 
-    // If the box overflows top or bottom, shift the COVER source offset
-    // so the background image AND box move together (maintaining alignment)
+    // Calculate how much to shift the cover so the box lands in the safe zone
     const safeTop = minTopMargin
     const safeBottom = height - minBottomMargin
+    const scaleY = cover.sh / height
 
-    if (boxY < safeTop) {
-      // Face is too high -- shift cover.sy DOWN (reveal lower part of image)
-      const shiftCanvas = safeTop - boxY
-      const scaleY = cover.sh / height
-      cover.sy += shiftCanvas * scaleY
-      // Clamp cover.sy to not go past image
-      cover.sy = Math.min(cover.sy, image.height - cover.sh)
-    } else if (boxY + boxHeight > safeBottom) {
-      // Face is too low -- shift cover.sy UP
-      const shiftCanvas = (boxY + boxHeight) - safeBottom
-      const scaleY = cover.sh / height
-      cover.sy -= shiftCanvas * scaleY
-      cover.sy = Math.max(0, cover.sy)
+    let targetBoxY = initial.y
+
+    if (targetBoxY < safeTop) {
+      // Face region is above safe zone -- shift cover source DOWN
+      const shift = (safeTop - targetBoxY) * scaleY
+      cover.sy = Math.min(cover.sy + shift, image.height - cover.sh)
+    } else if (targetBoxY + initial.h > safeBottom) {
+      // Face region is below safe zone -- shift cover source UP
+      const shift = ((targetBoxY + initial.h) - safeBottom) * scaleY
+      cover.sy = Math.max(0, cover.sy - shift)
     }
 
-    // Now remap with the adjusted cover -- both BG and box use this
+    // Also handle horizontal: shift cover.sx if box overflows left/right
+    const scaleX = cover.sw / width
+    if (initial.x < boxMargin) {
+      const shift = (boxMargin - initial.x) * scaleX
+      cover.sx = Math.min(cover.sx + shift, image.width - cover.sw)
+    } else if (initial.x + initial.w > width - boxMargin) {
+      const shift = ((initial.x + initial.w) - (width - boxMargin)) * scaleX
+      cover.sx = Math.max(0, cover.sx - shift)
+    }
+
+    // Re-map with adjusted cover -- BG and box now use same transform
     const mapped = imgToCanvas(
       clamped.x, clamped.y, clamped.width, clamped.height,
       width, height, cover
@@ -216,12 +220,6 @@ export function renderPoster(
     boxY = mapped.y
     boxWidth = mapped.w
     boxHeight = mapped.h
-
-    // Also clamp horizontally
-    if (boxX < boxMargin) boxX = boxMargin
-    if (boxX + boxWidth > width - boxMargin) {
-      boxWidth = width - boxMargin - boxX
-    }
   } else {
     // Standard positioning: crop box on the right side
     const cropAspect = clamped.width / clamped.height
