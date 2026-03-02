@@ -312,15 +312,16 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
   const zoomedSw = baseCover.sw / zoom
   const zoomedSh = baseCover.sh / zoom
 
-  // Apply pan: shift the source window. panX/panY are -100..100
-  // representing % of the available slack in each direction
-  const slackX = image.width - zoomedSw
-  const slackY = image.height - zoomedSh
+  // Apply pan: shift the source window. panX/panY are -100..100.
+  // Always allow panning by using the full source dimension as range,
+  // guaranteeing movement even at zoom <= 1.0.
+  const maxPanX = Math.max(image.width - zoomedSw, zoomedSw * 0.5)
+  const maxPanY = Math.max(image.height - zoomedSh, zoomedSh * 0.5)
   const centerSx = baseCover.sx + (baseCover.sw - zoomedSw) / 2
   const centerSy = baseCover.sy + (baseCover.sh - zoomedSh) / 2
   // Negate so dragging right moves the image right (source crop goes left)
-  const panOffsetX = -(filter.panX / 100) * (slackX / 2)
-  const panOffsetY = -(filter.panY / 100) * (slackY / 2)
+  const panOffsetX = -(filter.panX / 100) * (maxPanX / 2)
+  const panOffsetY = -(filter.panY / 100) * (maxPanY / 2)
   const rawSx = centerSx + panOffsetX
   const rawSy = centerSy + panOffsetY
 

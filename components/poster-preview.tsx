@@ -76,13 +76,15 @@ export function PosterPreview({
 
   if (!image || !detection) {
     return (
-      <div className="flex items-center justify-center aspect-[4/5] w-full max-w-[540px] rounded border border-dashed border-[#333] bg-[#0e0e0e]">
-        <div className="text-center px-6">
-          <div className="text-[#555] font-mono text-sm mb-2">
-            No preview yet
-          </div>
-          <div className="text-[#444] font-mono text-xs">
-            Upload a photo to generate the poster
+      <div className="flex items-center justify-center h-full w-full max-h-full">
+        <div className="aspect-[4/5] h-full max-h-full rounded border border-dashed border-[#333] bg-[#0e0e0e] flex items-center justify-center">
+          <div className="text-center px-6">
+            <div className="text-[#555] font-mono text-sm mb-2">
+              No preview yet
+            </div>
+            <div className="text-[#444] font-mono text-xs">
+              Upload a photo to generate the poster
+            </div>
           </div>
         </div>
       </div>
@@ -90,10 +92,10 @@ export function PosterPreview({
   }
 
   return (
-    <div className="flex flex-col items-center w-full max-w-[540px]">
+    <div className="flex items-center justify-center h-full w-full max-h-full">
       <canvas
         ref={displayCanvasRef}
-        className="w-full aspect-[4/5] rounded"
+        className="h-full max-h-full aspect-[4/5] rounded"
         style={{ imageRendering: "auto" }}
       />
     </div>

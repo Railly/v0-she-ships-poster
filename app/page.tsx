@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useRef, useCallback, useEffect } from "react"
+import { Download, Loader2 } from "lucide-react"
 import { PosterForm } from "@/components/poster-form"
 import { PosterPreview } from "@/components/poster-preview"
 import { PosterControls } from "@/components/poster-controls"
@@ -57,7 +58,6 @@ export default function PosterGeneratorPage() {
 
   const exportCanvasRef = useRef<HTMLCanvasElement>(null)
 
-  // Preload bg.png and larissa.png on mount
   useEffect(() => {
     let cancelled = false
 
@@ -66,7 +66,6 @@ export default function PosterGeneratorPage() {
       setModelStatus("loading")
 
       try {
-        // Load both images in parallel
         const [bgImg, speakerImg] = await Promise.all([
           loadImage("/bg.png"),
           loadImage("/larissa.png"),
@@ -77,7 +76,6 @@ export default function PosterGeneratorPage() {
         setBgImage(bgImg)
         setImage(speakerImg)
 
-        // Run face detection on the preloaded speaker image
         const result = await detectFace(speakerImg)
         if (cancelled) return
 
@@ -154,10 +152,10 @@ export default function PosterGeneratorPage() {
   const canExport = !!image && !!detection && !isProcessing
 
   return (
-    <div className="min-h-screen bg-[#0e0e0e]">
+    <div className="flex h-screen flex-col overflow-hidden bg-[#0e0e0e]">
       {/* Header */}
-      <header className="border-b border-[#222] px-6 py-4">
-        <div className="mx-auto flex max-w-7xl items-center justify-between">
+      <header className="shrink-0 border-b border-[#222] px-5 py-3">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1 font-mono text-lg font-bold text-[#f0f0f0]">
               <span className="text-[#E49BC2]">SS</span>
@@ -172,56 +170,72 @@ export default function PosterGeneratorPage() {
                 <rect x="14" y="16" width="2" height="4" rx="1" />
               </svg>
             </div>
-            <span className="text-xs font-mono text-[#555] uppercase tracking-widest">
-              Poster Generator
-            </span>
+            {modelStatus === "ready" && (
+              <span className="text-[10px] font-mono text-[#4ade80] flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#4ade80]" />
+                Ready
+              </span>
+            )}
+            {modelStatus === "loading" && (
+              <span className="text-[10px] font-mono text-[#E49BC2] flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#E49BC2] animate-pulse" />
+                Loading...
+              </span>
+            )}
+            {modelStatus === "error" && (
+              <span className="text-[10px] font-mono text-[#ff6b6b] flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#ff6b6b]" />
+                No face detected
+              </span>
+            )}
           </div>
-          {modelStatus === "ready" && (
-            <span className="text-xs font-mono text-[#4ade80] flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-[#4ade80]" />
-              Face detection ready
-            </span>
-          )}
-          {modelStatus === "loading" && (
-            <span className="text-xs font-mono text-[#E49BC2] flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-[#E49BC2] animate-pulse" />
-              Loading models...
-            </span>
-          )}
-          {modelStatus === "error" && (
-            <span className="text-xs font-mono text-[#ff6b6b] flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-[#ff6b6b]" />
-              No face detected
-            </span>
-          )}
+
+          {/* Download button in header */}
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={!canExport || isProcessing}
+            className="flex items-center gap-2 rounded-lg bg-[#E49BC2] px-4 py-2 text-xs font-mono font-bold uppercase tracking-wider text-[#1a1a1a] transition-all hover:bg-[#d488b3] disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+          >
+            {isProcessing ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Processing
+              </>
+            ) : (
+              <>
+                <Download className="h-3.5 w-3.5" />
+                Download PNG
+              </>
+            )}
+          </button>
         </div>
       </header>
 
-      {/* Main content */}
-      <main className="mx-auto flex max-w-7xl flex-col lg:flex-row gap-8 p-6">
-        {/* Left panel: form + controls */}
-        <div className="flex flex-col gap-8 lg:w-[360px] shrink-0 overflow-y-auto max-h-[calc(100vh-80px)] pb-8 pr-2">
-          <PosterForm
-            speaker={speaker}
-            onSpeakerChange={setSpeaker}
-            onImageUpload={handleImageUpload}
-            hasImage={!!image}
-          />
-          <div className="border-t border-[#222] pt-6">
-            <PosterControls
-              template={template}
-              onTemplateChange={setTemplate}
-              filter={filter}
-              onFilterChange={setFilter}
-              onExport={handleExport}
-              isProcessing={isProcessing}
-              canExport={canExport}
+      {/* Main content -- fills remaining height, no scroll on outer */}
+      <main className="flex flex-1 min-h-0 gap-0">
+        {/* Left panel: form + controls -- scrollable independently */}
+        <div className="w-[340px] shrink-0 border-r border-[#222] flex flex-col min-h-0">
+          <div className="flex-1 overflow-y-auto p-5 space-y-5">
+            <PosterForm
+              speaker={speaker}
+              onSpeakerChange={setSpeaker}
+              onImageUpload={handleImageUpload}
+              hasImage={!!image}
             />
+            <div className="border-t border-[#222] pt-5">
+              <PosterControls
+                template={template}
+                onTemplateChange={setTemplate}
+                filter={filter}
+                onFilterChange={setFilter}
+              />
+            </div>
           </div>
         </div>
 
-        {/* Right panel: preview */}
-        <div className="flex-1 flex items-start justify-center lg:sticky lg:top-6 self-start">
+        {/* Right panel: preview -- centered, fills remaining space */}
+        <div className="flex-1 flex items-center justify-center min-h-0 p-6">
           <PosterPreview
             speaker={speaker}
             image={image}
@@ -234,7 +248,7 @@ export default function PosterGeneratorPage() {
         </div>
       </main>
 
-      {/* Off-screen export canvas (full resolution) */}
+      {/* Off-screen export canvas */}
       <canvas
         ref={exportCanvasRef}
         width={1080}

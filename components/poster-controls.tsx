@@ -2,8 +2,6 @@
 
 import { useRef, useCallback, useState, useEffect } from "react"
 import {
-  Download,
-  Loader2,
   TriangleAlert,
   RotateCcw,
   Minus,
@@ -17,9 +15,6 @@ interface PosterControlsProps {
   onTemplateChange: (t: TemplateType) => void
   filter: FilterSettings
   onFilterChange: (f: FilterSettings) => void
-  onExport: () => void
-  isProcessing: boolean
-  canExport: boolean
 }
 
 // ── 2D Drag Pad ─────────────────────────────────────────────────────
@@ -246,9 +241,6 @@ export function PosterControls({
   onTemplateChange,
   filter,
   onFilterChange,
-  onExport,
-  isProcessing,
-  canExport,
 }: PosterControlsProps) {
   const updateFilter = (key: keyof FilterSettings, value: number | string | boolean) => {
     onFilterChange({ ...filter, [key]: value })
@@ -285,26 +277,6 @@ export function PosterControls({
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Download -- always visible at top */}
-      <button
-        type="button"
-        onClick={onExport}
-        disabled={!canExport || isProcessing}
-        className="flex items-center justify-center gap-2 rounded-lg bg-[#E49BC2] px-4 py-3 text-sm font-mono font-bold uppercase tracking-wider text-[#1a1a1a] transition-all hover:bg-[#d488b3] disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-      >
-        {isProcessing ? (
-          <>
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Processing...
-          </>
-        ) : (
-          <>
-            <Download className="h-4 w-4" />
-            Download PNG
-          </>
-        )}
-      </button>
-
       {/* Template selector */}
       <div>
         <h2 className="text-[10px] font-mono uppercase tracking-widest text-[#666] mb-2">
