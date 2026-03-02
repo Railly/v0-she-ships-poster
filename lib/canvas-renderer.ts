@@ -184,24 +184,27 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
 
     // If the box extends above or past canvas edges, shift BOTH
     // the box and BG by the same amount to keep alignment.
-    const safeTop = height * 0.06
+    // Use a generous top margin so the image's top is visible above the box.
+    const safeTop = height * 0.12
     if (boxY < safeTop) {
       bgOffsetY = safeTop - boxY
       boxY = safeTop
     }
     // Ensure box doesn't go below 55% of canvas
-    if (boxY + boxH > height * 0.58) {
-      const shift = (boxY + boxH) - height * 0.58
+    if (boxY + boxH > height * 0.55) {
+      const shift = (boxY + boxH) - height * 0.55
       bgOffsetY -= shift
       boxY -= shift
     }
     // Ensure box stays within horizontal bounds
+    // Account for badge width (~5% of canvas) on the right side
+    const badgeAllowance = width * 0.05
     if (boxX < margin) {
       bgOffsetX = margin - boxX
       boxX = margin
     }
-    if (boxX + boxW > width - margin) {
-      const shift = (boxX + boxW) - (width - margin)
+    if (boxX + boxW + badgeAllowance > width - margin) {
+      const shift = (boxX + boxW + badgeAllowance) - (width - margin)
       bgOffsetX -= shift
       boxX -= shift
     }
