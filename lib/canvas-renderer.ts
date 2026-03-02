@@ -107,34 +107,30 @@ function renderGrayscaleTinted(
   return off
 }
 
-// ── BACKGROUND: single draw at offset, blur hides edge gaps ─────────
+// ── BACKGROUND: always full-bleed, no offset, no black gaps ─────────
 function drawBackground(
   ctx: CanvasRenderingContext2D,
   image: HTMLImageElement,
   cover: { sx: number; sy: number; sw: number; sh: number },
   width: number, height: number,
-  bgOffsetX: number, bgOffsetY: number,
   filter: FilterSettings
 ) {
   ctx.fillStyle = "#111111"
   ctx.fillRect(0, 0, width, height)
 
-  // Single draw at offset position. The heavy blur (12-20px) naturally
-  // spreads image pixels into any small gap from the offset, and
-  // brightness(0.3) makes any remaining edge barely visible.
+  // Draw the full image at cover-fit with no offset.
+  // This guarantees: no black gaps, no ghosting, full image coverage.
+  // The box is positioned independently (clamped to safe zone).
   const sharpOff = document.createElement("canvas")
   sharpOff.width = width
   sharpOff.height = height
   const sc = sharpOff.getContext("2d")!
-  sc.fillStyle = "#111111"
-  sc.fillRect(0, 0, width, height)
   sc.drawImage(
     image,
     cover.sx, cover.sy, cover.sw, cover.sh,
-    bgOffsetX, bgOffsetY, width, height
+    0, 0, width, height
   )
 
-  // Apply blur + grayscale directly to main canvas
   ctx.filter = `grayscale(100%) blur(${filter.bgBlur}px) brightness(0.3)`
   ctx.drawImage(sharpOff, 0, 0)
   ctx.filter = "none"
@@ -157,74 +153,46 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
   const clamped = clampBox(cropRegion, image.width, image.height)
 
   // ── COMPUTE BOX POSITION ──────────────────────────────────────
+  // Box is positioned independently from BG. BG is always full-bleed
+  // (no offset). Box is clamped to a safe zone.
   const margin = width * 0.06
   const cropAspect = clamped.width / clamped.height
   let boxX: number, boxY: number, boxW: number, boxH: number
-  let bgOffsetX = 0, bgOffsetY = 0
 
   if (filter.overlay) {
-    // Map crop to natural canvas position
     const nat = imgToCanvas(
       clamped.x, clamped.y, clamped.width, clamped.height,
       width, height, cover
     )
     boxW = nat.w; boxH = nat.h; boxX = nat.x; boxY = nat.y
 
-    // Template-specific constraints
     if (template === "half-face") {
-      // Cap width to 40%, height to 60%
-      if (boxW > width * 0.40) { boxH *= (width * 0.40) / boxW; boxW = width * 0.40 }
-      if (boxH > height * 0.60) { boxW *= (height * 0.60) / boxH; boxH = height * 0.60 }
+      if (boxW > width * 0.35) { boxH *= (width * 0.35) / boxW; boxW = width * 0.35 }
+      if (boxH > height * 0.55) { boxW *= (height * 0.55) / boxH; boxH = height * 0.55 }
+      // Clamp to right side, within safe zone
+      boxX = Math.max(width * 0.50, Math.min(boxX, width - boxW - margin))
+      boxY = Math.max(height * 0.08, Math.min(boxY, height * 0.52 - boxH))
     } else {
-      // Eyes/smile: cap width to 65%, height to 28%
-      if (boxW > width * 0.65) { boxH *= (width * 0.65) / boxW; boxW = width * 0.65 }
-      if (boxH > height * 0.28) { boxW *= (height * 0.28) / boxH; boxH = height * 0.28 }
+      if (boxW > width * 0.62) { boxH *= (width * 0.62) / boxW; boxW = width * 0.62 }
+      if (boxH > height * 0.26) { boxW *= (height * 0.26) / boxH; boxH = height * 0.26 }
+      // For eyes/smile: position lower (vertically centered in top half)
+      boxX = Math.max(margin, Math.min(boxX, width - boxW - margin))
+      boxY = Math.max(height * 0.22, Math.min(boxY, height * 0.52 - boxH))
     }
-
-    // Push into safe zone using offset (so BG moves with box)
-    // Eyes/smile: push box further down to center it better vertically
-    const safeTop = (template === "half-face") ? height * 0.10 : height * 0.18
-    const safeBottom = height * 0.55
-
-    if (boxY < safeTop) { bgOffsetY = safeTop - boxY }
-    else if (boxY + boxH > safeBottom) { bgOffsetY = safeBottom - (boxY + boxH) }
-
-    if (template === "half-face") {
-      // Keep box on the right side
-      const minLeft = width * 0.48
-      if (boxX < minLeft) bgOffsetX = minLeft - boxX
-      if (boxX + boxW + bgOffsetX > width - margin) {
-        bgOffsetX = (width - margin - boxW) - boxX
-      }
-    } else {
-      // Center horizontally-ish
-      if (boxX < margin) bgOffsetX = margin - boxX
-      if (boxX + boxW + bgOffsetX > width - margin) {
-        bgOffsetX = (width - margin - boxW) - boxX
-      }
-    }
-
-    boxX += bgOffsetX
-    boxY += bgOffsetY
   } else {
-    // Non-overlay: fixed positions
     if (template === "half-face") {
-      boxH = height * 0.55
-      boxW = boxH * cropAspect
-      if (boxW > width * 0.38) { boxW = width * 0.38; boxH = boxW / cropAspect }
-      boxX = width - boxW - margin
-      boxY = height * 0.10
+      boxH = height * 0.55; boxW = boxH * cropAspect
+      if (boxW > width * 0.35) { boxW = width * 0.35; boxH = boxW / cropAspect }
+      boxX = width - boxW - margin; boxY = height * 0.08
     } else {
-      boxW = width * 0.60
-      boxH = boxW / cropAspect
+      boxW = width * 0.60; boxH = boxW / cropAspect
       if (boxH > height * 0.25) { boxH = height * 0.25; boxW = boxH * cropAspect }
-      boxX = (width - boxW) / 2
-      boxY = height * 0.12
+      boxX = (width - boxW) / 2; boxY = height * 0.22
     }
   }
 
-  // ── 1) DRAW BACKGROUND ─────────────────────────────────────────
-  drawBackground(ctx, image, cover, width, height, bgOffsetX, bgOffsetY, filter)
+  // ── 1) DRAW BACKGROUND (full-bleed, no offset) ────────────────
+  drawBackground(ctx, image, cover, width, height, filter)
   tileGrain(ctx, 0, 0, width, height, filter.bgGrain)
 
   // ── 2) TINTED FACE CROP BOX ────────────────────────────────────
@@ -244,7 +212,7 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
   ctx.lineWidth = 2
   ctx.strokeRect(boxX, boxY, boxW, boxH)
 
-  // ── 3) BADGE — outside box, top-right corner ──────────────────
+  // ── 3) BADGE ──────────────────────────────────────────────────
   {
     const badgeText = speaker.badgeLabel.toUpperCase()
     const badgeFontSize = Math.round(width * 0.016)
@@ -269,25 +237,25 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
     ctx.restore()
   }
 
-  // ── 4) bg.png frame overlay (before text so text is on top) ────
+  // ── 4) bg.png frame overlay ────────────────────────────────────
   if (bgImage) {
     const bgCover = getCoverCoords(bgImage.width, bgImage.height, width, height)
     ctx.drawImage(bgImage, bgCover.sx, bgCover.sy, bgCover.sw, bgCover.sh, 0, 0, width, height)
   }
 
-  // ── 5+6) PORTRAIT + NAME + ROLE — anchored from bottom up ─────
-  // ALL templates use the same constrained text width and bottom anchoring.
-  // Layout is built from the canvas bottom upward so text never clips.
+  // ── 5) BOTTOM SECTION: portrait + name + role ─────────────────
+  // Built from the canvas bottom upward. Text max-width is constrained
+  // for all templates. Portrait sits above name, never overlapping.
 
   const nameFontSize = Math.round(width * 0.075)
   const roleFontSize = Math.round(width * 0.026)
   const textX = margin
-  const textMaxW = width * 0.46 // constrained for all templates
+  const textMaxW = width * 0.46
 
   // Pre-calculate role lines
   ctx.font = `600 ${roleFontSize}px "Geist", sans-serif`
   const roleLines = wrapText(ctx, speaker.role.toUpperCase(), textMaxW)
-  const roleBlockH = roleLines.length * roleFontSize * 1.3
+  const roleBlockH = roleLines.length * roleFontSize * 1.4
 
   // Pre-calculate name lines
   ctx.font = `900 ${nameFontSize}px "Geist", sans-serif`
@@ -302,7 +270,7 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
     } else { tmpLine = test }
   }
   if (tmpLine) nameLines.push(tmpLine)
-  const nameBlockH = nameLines.length * nameFontSize * 1.05
+  const nameBlockH = nameLines.length * nameFontSize * 1.1
 
   // Portrait sizing
   const imgAspect = image.width / image.height
@@ -311,13 +279,14 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
   if (imgAspect > 1) { pW = pScale; pH = pScale / imgAspect }
   else { pH = pScale; pW = pScale * imgAspect }
 
-  // Bottom anchor: role ends at 92% of canvas height
-  const bottomEdge = height * 0.92
+  // Layout from bottom: role -> name gap -> name -> portrait gap -> portrait
+  const bottomEdge = height * 0.93
   const roleStartY = bottomEdge - roleBlockH
-  const nameRoleGap = nameFontSize * 0.25
-  const nameStartY = roleStartY - nameRoleGap - nameBlockH + nameFontSize
-  const portraitGap = height * 0.012
-  const pY = nameStartY - nameFontSize * 0.25 - pH - portraitGap
+  const nameRoleGap = nameFontSize * 0.5 // breathing room between name and role
+  const nameBottomY = roleStartY - nameRoleGap
+  const nameTopY = nameBottomY - nameBlockH + nameFontSize // first line baseline
+  const portraitBottomY = nameTopY - nameFontSize * 0.4 // gap between portrait bottom and name top
+  const pY = portraitBottomY - pH
   const pX = margin
 
   // Draw portrait
@@ -348,14 +317,14 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
   ctx.font = `900 ${nameFontSize}px "Geist", sans-serif`
   ctx.textAlign = "left"
   for (let i = 0; i < nameLines.length; i++) {
-    ctx.fillText(nameLines[i], textX, nameStartY + i * nameFontSize * 1.05)
+    ctx.fillText(nameLines[i], textX, nameTopY + i * nameFontSize * 1.1)
   }
 
-  // Draw role — tight gap from name
+  // Draw role
   ctx.fillStyle = "#4ade80"
   ctx.font = `600 ${roleFontSize}px "Geist", sans-serif`
   for (let i = 0; i < roleLines.length; i++) {
-    ctx.fillText(roleLines[i], textX, roleStartY + i * roleFontSize * 1.3)
+    ctx.fillText(roleLines[i], textX, roleStartY + i * roleFontSize * 1.4)
   }
 }
 
