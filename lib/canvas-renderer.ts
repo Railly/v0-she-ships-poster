@@ -99,7 +99,7 @@ function renderGrayscaleTinted(
   off.width = w; off.height = h
   const offCtx = off.getContext("2d")!
 
-  if (isSafari()) {
+  if (isFilterUnsupported()) {
     // Safari fallback: draw then manually grayscale
     offCtx.drawImage(image, srcX, srcY, srcW, srcH, 0, 0, w, h)
     applyGrayscaleBrightness(offCtx, w, h, 1.0) // grayscale only, no brightness change
@@ -120,11 +120,22 @@ function renderGrayscaleTinted(
   return off
 }
 
-// ── Detect Safari (no ctx.filter support) ───────────────────────────
-function isSafari(): boolean {
-  if (typeof navigator === "undefined") return false
-  const ua = navigator.userAgent
-  return /^((?!chrome|android).)*safari/i.test(ua)
+// ── Detect if ctx.filter is unsupported (Safari < 17.2) ─────────────
+let _filterSupported: boolean | null = null
+function isFilterUnsupported(): boolean {
+  if (_filterSupported !== null) return !_filterSupported
+  if (typeof document === "undefined") return false
+  try {
+    const testCanvas = document.createElement("canvas")
+    testCanvas.width = 1; testCanvas.height = 1
+    const testCtx = testCanvas.getContext("2d")!
+    testCtx.filter = "grayscale(100%)"
+    // If filter is supported, the property will stick
+    _filterSupported = testCtx.filter === "grayscale(100%)"
+  } catch {
+    _filterSupported = false
+  }
+  return !_filterSupported
 }
 
 // ── Manual grayscale + brightness for Safari fallback ───────────────
@@ -142,83 +153,129 @@ function applyGrayscaleBrightness(
   ctx.putImageData(imageData, 0, 0)
 }
 
-// ── Sample average edge color from an image ─────────────────────────
-function sampleEdgeColor(
-  image: HTMLImageElement, cover: { sx: number; sy: number; sw: number; sh: number }
-): string {
-  const sampleSize = 32
+// ── Sample edge colors from specific regions of the image ───────────
+// Returns the average color of a given edge (top/bottom/left/right)
+// after applying the same grayscale+brightness(0.3) as the BG filter.
+function sampleEdgeColors(
+  image: HTMLImageElement,
+  cover: { sx: number; sy: number; sw: number; sh: number }
+): { top: string; bottom: string; left: string; right: string; avg: string } {
+  const size = 64
   const off = document.createElement("canvas")
-  off.width = sampleSize; off.height = sampleSize
+  off.width = size; off.height = size
   const c = off.getContext("2d")!
-  c.drawImage(image, cover.sx, cover.sy, cover.sw, cover.sh, 0, 0, sampleSize, sampleSize)
-  const data = c.getImageData(0, 0, sampleSize, sampleSize).data
+  c.drawImage(image, cover.sx, cover.sy, cover.sw, cover.sh, 0, 0, size, size)
+  const data = c.getImageData(0, 0, size, size).data
 
-  // Sample top row and edges
-  let r = 0, g = 0, b = 0, count = 0
-  for (let x = 0; x < sampleSize; x++) {
-    // Top row
-    const i1 = (x) * 4
-    r += data[i1]; g += data[i1 + 1]; b += data[i1 + 2]; count++
-    // Bottom row
-    const i2 = ((sampleSize - 1) * sampleSize + x) * 4
-    r += data[i2]; g += data[i2 + 1]; b += data[i2 + 2]; count++
-    // Left column
-    const i3 = (x * sampleSize) * 4
-    r += data[i3]; g += data[i3 + 1]; b += data[i3 + 2]; count++
-    // Right column
-    const i4 = (x * sampleSize + sampleSize - 1) * 4
-    r += data[i4]; g += data[i4 + 1]; b += data[i4 + 2]; count++
+  const sampleRegion = (pixels: number[][]) => {
+    let r = 0, g = 0, b = 0, count = 0
+    for (const [x, y] of pixels) {
+      const i = (y * size + x) * 4
+      // Convert to grayscale first (matching BG filter)
+      const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114
+      r += gray; g += gray; b += gray; count++
+    }
+    // Apply brightness(0.3) to match the BG darkening
+    const br = 0.3
+    const ar = Math.round((r / count) * br)
+    const ag = Math.round((g / count) * br)
+    const ab = Math.round((b / count) * br)
+    return `rgb(${ar},${ag},${ab})`
   }
-  // Apply brightness(0.3) to match the BG filter
-  const br = 0.3
-  const ar = Math.round((r / count) * br)
-  const ag = Math.round((g / count) * br)
-  const ab = Math.round((b / count) * br)
-  return `rgb(${ar},${ag},${ab})`
+
+  // Sample 8-pixel-deep strips from each edge
+  const depth = 8
+  const topPx: number[][] = [], bottomPx: number[][] = []
+  const leftPx: number[][] = [], rightPx: number[][] = []
+  for (let x = 0; x < size; x++) {
+    for (let d = 0; d < depth; d++) {
+      topPx.push([x, d])
+      bottomPx.push([x, size - 1 - d])
+    }
+  }
+  for (let y = 0; y < size; y++) {
+    for (let d = 0; d < depth; d++) {
+      leftPx.push([d, y])
+      rightPx.push([size - 1 - d, y])
+    }
+  }
+  const allPx = [...topPx, ...bottomPx, ...leftPx, ...rightPx]
+
+  return {
+    top: sampleRegion(topPx),
+    bottom: sampleRegion(bottomPx),
+    left: sampleRegion(leftPx),
+    right: sampleRegion(rightPx),
+    avg: sampleRegion(allPx),
+  }
 }
 
-// ── BACKGROUND: draw with optional offset, edge-color fill ──────────
+// ── BACKGROUND: draw with edge-color fill for seamless blending ─────
 function drawBackground(
   ctx: CanvasRenderingContext2D,
   image: HTMLImageElement,
   cover: { sx: number; sy: number; sw: number; sh: number },
   width: number, height: number,
-  filter: FilterSettings,
-  offsetX = 0, offsetY = 0
+  filter: FilterSettings
 ) {
-  // Fill with sampled edge color instead of harsh black
-  const edgeColor = sampleEdgeColor(image, cover)
-  ctx.fillStyle = edgeColor
+  // Sample edge colors for seamless blending (no more black gaps)
+  const edges = sampleEdgeColors(image, cover)
+
+  // Fill the entire canvas with edge-color-aware background
+  ctx.fillStyle = edges.avg
   ctx.fillRect(0, 0, width, height)
 
-  // Draw image at offset position (shifted when autoPosition is active)
+  // Draw edge-color gradients to smooth transitions at borders
+  const topGrad = ctx.createLinearGradient(0, 0, 0, height * 0.15)
+  topGrad.addColorStop(0, edges.top)
+  topGrad.addColorStop(1, "transparent")
+  ctx.fillStyle = topGrad
+  ctx.fillRect(0, 0, width, height * 0.15)
+
+  const botGrad = ctx.createLinearGradient(0, height * 0.85, 0, height)
+  botGrad.addColorStop(0, "transparent")
+  botGrad.addColorStop(1, edges.bottom)
+  ctx.fillStyle = botGrad
+  ctx.fillRect(0, height * 0.85, width, height * 0.15)
+
+  // Draw image filling the full canvas
   const sharpOff = document.createElement("canvas")
   sharpOff.width = width
   sharpOff.height = height
   const sc = sharpOff.getContext("2d")!
-  sc.fillStyle = edgeColor
+  sc.fillStyle = edges.avg
   sc.fillRect(0, 0, width, height)
   sc.drawImage(
     image,
     cover.sx, cover.sy, cover.sw, cover.sh,
-    offsetX, offsetY, width, height
+    0, 0, width, height
   )
 
-  if (isSafari()) {
+  if (isFilterUnsupported()) {
     // Safari fallback: manual pixel manipulation for grayscale + brightness
-    // then use CSS blur via a second offscreen canvas
     applyGrayscaleBrightness(sc, width, height, 0.3)
-    // Apply blur by drawing scaled down and back up (box blur approximation)
-    const blurScale = 0.1
+    // Multi-pass box blur approximation for Safari
+    const blurScale = 0.08
     const smallW = Math.max(1, Math.round(width * blurScale))
     const smallH = Math.max(1, Math.round(height * blurScale))
     const blurOff = document.createElement("canvas")
     blurOff.width = smallW; blurOff.height = smallH
     const bc = blurOff.getContext("2d")!
+    // Pass 1: shrink
     bc.drawImage(sharpOff, 0, 0, smallW, smallH)
+    // Pass 2: scale back up to intermediate size for smoother result
+    const midW = Math.round(width * 0.3)
+    const midH = Math.round(height * 0.3)
+    const midOff = document.createElement("canvas")
+    midOff.width = midW; midOff.height = midH
+    const mc = midOff.getContext("2d")!
+    mc.imageSmoothingEnabled = true
+    mc.imageSmoothingQuality = "high"
+    mc.drawImage(blurOff, 0, 0, midW, midH)
+    // Final draw
     ctx.imageSmoothingEnabled = true
     ctx.imageSmoothingQuality = "high"
-    ctx.drawImage(blurOff, 0, 0, width, height)
+    ctx.drawImage(midOff, 0, 0, width, height)
   } else {
     ctx.filter = `grayscale(100%) blur(${filter.bgBlur}px) brightness(0.3)`
     ctx.drawImage(sharpOff, 0, 0)
@@ -247,8 +304,6 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
   const margin = width * 0.06
   const cropAspect = clamped.width / clamped.height
   let boxX: number, boxY: number, boxW: number, boxH: number
-  let bgOffsetX = 0
-  let bgOffsetY = 0
 
   if (filter.overlay) {
     // Natural position from imgToCanvas -- matches the BG since both
@@ -259,36 +314,35 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
     )
     boxX = nat.x; boxY = nat.y; boxW = nat.w; boxH = nat.h
 
-    // When autoPosition is ON, nudge the box AND the BG together
-    // so the face content stays aligned, while avoiding logo collision
-    // and edge clipping.
+    // When autoPosition is ON, just constrain the box to safe zones.
+    // The BG stays static -- we only reposition the overlay box.
     if (filter.autoPosition) {
-      const logoZoneBottom = height * 0.12
+      const logoZoneBottom = height * 0.10
       const badgeW = width * 0.05
+      const textZoneTop = height * 0.58
 
-      // Push box below logo zone
+      // Constrain: push box below logo zone
       if (boxY < logoZoneBottom) {
-        const shift = logoZoneBottom - boxY
-        bgOffsetY = -shift  // BG shifts up (image moves down on canvas)
         boxY = logoZoneBottom
       }
-      // Keep box + badge within right edge
+      // Constrain: keep box + badge within right edge
       if (boxX + boxW + badgeW > width - margin) {
-        const shift = (boxX + boxW + badgeW) - (width - margin)
-        bgOffsetX = shift  // BG shifts left
-        boxX -= shift
+        boxX = width - margin - boxW - badgeW
       }
-      // Keep box within left edge
+      // Constrain: keep box within left edge
       if (boxX < margin) {
-        const shift = margin - boxX
-        bgOffsetX = -shift
         boxX = margin
       }
-      // Keep box from going below the text area (~58%)
-      if (boxY + boxH > height * 0.58) {
-        const shift = (boxY + boxH) - height * 0.58
-        bgOffsetY += shift
-        boxY -= shift
+      // Constrain: keep box from going below the text area
+      if (boxY + boxH > textZoneTop) {
+        // Try moving up first
+        boxY = textZoneTop - boxH
+        // If that pushes above logo zone, scale down the box
+        if (boxY < logoZoneBottom) {
+          boxY = logoZoneBottom
+          boxH = textZoneTop - logoZoneBottom
+          boxW = boxH * cropAspect
+        }
       }
     }
   } else {
@@ -304,7 +358,7 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
   }
 
   // ── 1) DRAW BACKGROUND ─────────────────────────────────────────
-  drawBackground(ctx, image, cover, width, height, filter, bgOffsetX, bgOffsetY)
+  drawBackground(ctx, image, cover, width, height, filter)
   tileGrain(ctx, 0, 0, width, height, filter.bgGrain)
 
   // ── 2) TINTED FACE CROP BOX ────────────────────────────────────
