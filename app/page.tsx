@@ -18,18 +18,16 @@ const DEFAULT_SPEAKER: SpeakerData = {
   role: "GTM @ ElevenLabs | Ex-Salesforce | B2B Strategic Sales",
   eventTitle: "Mas alla del titulo: construir desde el proposito",
   eventDate: "Jueves 5\nde Marzo\n3 P.M",
-  sideTextLeft: "Crafter Station x The Glitch Girls",
-  sideTextRight: "Conversatin x The Glitch Girls",
   badgeLabel: "PARTICIPANTE",
 }
 
 const DEFAULT_FILTER: FilterSettings = {
-  bgBlur: 14,
-  bgGrain: 0.12,
-  faceGrain: 0.15,
-  faceTintHex: "#934370",
-  faceTintOpacity: 0.65,
-  accentColor: "#E49BC2",
+  bgBlur: 5,
+  bgGrain: 0.14,
+  faceGrain: 0.10,
+  faceTintHex: "#7e3a60",
+  faceTintOpacity: 0.66,
+  accentColor: "#e49bc2",
   overlay: false,
 }
 
@@ -58,7 +56,7 @@ export default function PosterGeneratorPage() {
 
   const exportCanvasRef = useRef<HTMLCanvasElement>(null)
 
-  // Preload bg.jpeg and larissa.png on mount
+  // Preload bg.png and larissa.png on mount
   useEffect(() => {
     let cancelled = false
 
@@ -69,7 +67,7 @@ export default function PosterGeneratorPage() {
       try {
         // Load both images in parallel
         const [bgImg, speakerImg] = await Promise.all([
-          loadImage("/bg.jpeg"),
+          loadImage("/bg.png"),
           loadImage("/larissa.png"),
         ])
 

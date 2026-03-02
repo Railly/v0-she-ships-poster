@@ -124,33 +124,7 @@ export function PosterForm({
         />
       </div>
 
-      {/* Side Text Left */}
-      <div>
-        <label className="block text-xs font-mono uppercase tracking-wider text-[#a0a0a0] mb-2">
-          Side Text (Left)
-        </label>
-        <input
-          type="text"
-          value={speaker.sideTextLeft}
-          onChange={(e) => update("sideTextLeft", e.target.value)}
-          className="w-full rounded border border-[#333] bg-[#1a1a1a] px-3 py-2 text-sm text-[#f0f0f0] font-mono focus:border-[#E49BC2] focus:outline-none"
-          placeholder="Crafter Station x The Glitch Girls"
-        />
-      </div>
 
-      {/* Side Text Right */}
-      <div>
-        <label className="block text-xs font-mono uppercase tracking-wider text-[#a0a0a0] mb-2">
-          Side Text (Right)
-        </label>
-        <input
-          type="text"
-          value={speaker.sideTextRight}
-          onChange={(e) => update("sideTextRight", e.target.value)}
-          className="w-full rounded border border-[#333] bg-[#1a1a1a] px-3 py-2 text-sm text-[#f0f0f0] font-mono focus:border-[#E49BC2] focus:outline-none"
-          placeholder="Conversatin x The Glitch Girls"
-        />
-      </div>
     </div>
   )
 }

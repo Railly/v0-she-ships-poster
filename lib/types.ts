@@ -3,8 +3,6 @@ export interface SpeakerData {
   role: string
   eventTitle: string
   eventDate: string
-  sideTextLeft: string
-  sideTextRight: string
   badgeLabel: string
 }
 
