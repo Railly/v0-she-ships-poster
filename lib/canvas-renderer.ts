@@ -1,5 +1,83 @@
 import type { PosterOptions, FaceBox, FilterSettings, TemplateType } from "./types"
 
+// ── Safari detection: ctx.filter is not supported ───────────────────
+function supportsCtxFilter(): boolean {
+  if (typeof document === "undefined") return false
+  const c = document.createElement("canvas")
+  c.width = 1; c.height = 1
+  const ctx = c.getContext("2d")!
+  ctx.filter = "grayscale(100%)"
+  return ctx.filter === "grayscale(100%)"
+}
+let _supportsFilter: boolean | null = null
+function hasCtxFilter(): boolean {
+  if (_supportsFilter === null) _supportsFilter = supportsCtxFilter()
+  return _supportsFilter
+}
+
+// ── Manual pixel grayscale (Safari fallback) ────────────────────────
+function applyGrayscale(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
+  const imgData = ctx.getImageData(x, y, w, h)
+  const d = imgData.data
+  for (let i = 0; i < d.length; i += 4) {
+    const gray = d[i] * 0.299 + d[i+1] * 0.587 + d[i+2] * 0.114
+    d[i] = d[i+1] = d[i+2] = gray
+  }
+  ctx.putImageData(imgData, x, y)
+}
+
+// ── Manual pixel brightness (Safari fallback) ───────────────────────
+function applyBrightness(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, factor: number) {
+  const imgData = ctx.getImageData(x, y, w, h)
+  const d = imgData.data
+  for (let i = 0; i < d.length; i += 4) {
+    d[i]   = Math.min(255, d[i] * factor)
+    d[i+1] = Math.min(255, d[i+1] * factor)
+    d[i+2] = Math.min(255, d[i+2] * factor)
+  }
+  ctx.putImageData(imgData, x, y)
+}
+
+// ── Stackblur-lite for Safari (box blur approximation) ──────────────
+function applyBoxBlur(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, radius: number) {
+  if (radius <= 0) return
+  const passes = 3 // 3-pass box blur approximates Gaussian
+  const imgData = ctx.getImageData(x, y, w, h)
+  const d = imgData.data
+  const len = w * h * 4
+  const tmp = new Uint8ClampedArray(len)
+
+  for (let pass = 0; pass < passes; pass++) {
+    // Horizontal pass
+    for (let row = 0; row < h; row++) {
+      for (let col = 0; col < w; col++) {
+        let r = 0, g = 0, b = 0, count = 0
+        for (let k = -radius; k <= radius; k++) {
+          const c2 = Math.min(w - 1, Math.max(0, col + k))
+          const idx = (row * w + c2) * 4
+          r += d[idx]; g += d[idx+1]; b += d[idx+2]; count++
+        }
+        const idx = (row * w + col) * 4
+        tmp[idx] = r / count; tmp[idx+1] = g / count; tmp[idx+2] = b / count; tmp[idx+3] = d[idx+3]
+      }
+    }
+    // Vertical pass
+    for (let col = 0; col < w; col++) {
+      for (let row = 0; row < h; row++) {
+        let r = 0, g = 0, b = 0, count = 0
+        for (let k = -radius; k <= radius; k++) {
+          const r2 = Math.min(h - 1, Math.max(0, row + k))
+          const idx = (r2 * w + col) * 4
+          r += tmp[idx]; g += tmp[idx+1]; b += tmp[idx+2]; count++
+        }
+        const idx = (row * w + col) * 4
+        d[idx] = r / count; d[idx+1] = g / count; d[idx+2] = b / count
+      }
+    }
+  }
+  ctx.putImageData(imgData, x, y)
+}
+
 // ── Grain texture (procedurally generated, cached) ──────────────────
 let grainCanvas: HTMLCanvasElement | null = null
 
@@ -94,18 +172,28 @@ function renderGrayscaleTinted(
   destW: number, destH: number, filter: FilterSettings
 ): HTMLCanvasElement {
   const off = document.createElement("canvas")
-  off.width = Math.ceil(destW)
-  off.height = Math.ceil(destH)
+  const dw = Math.ceil(destW)
+  const dh = Math.ceil(destH)
+  off.width = dw
+  off.height = dh
   const offCtx = off.getContext("2d")!
-  offCtx.filter = "grayscale(100%)"
-  offCtx.drawImage(image, srcX, srcY, srcW, srcH, 0, 0, destW, destH)
-  offCtx.filter = "none"
+
+  if (hasCtxFilter()) {
+    offCtx.filter = "grayscale(100%)"
+    offCtx.drawImage(image, srcX, srcY, srcW, srcH, 0, 0, dw, dh)
+    offCtx.filter = "none"
+  } else {
+    // Safari fallback: draw then apply manual grayscale
+    offCtx.drawImage(image, srcX, srcY, srcW, srcH, 0, 0, dw, dh)
+    applyGrayscale(offCtx, 0, 0, dw, dh)
+  }
+
   offCtx.globalCompositeOperation = "multiply"
   offCtx.fillStyle = hexToRgba(filter.faceTintHex, filter.faceTintOpacity)
-  offCtx.fillRect(0, 0, destW, destH)
+  offCtx.fillRect(0, 0, dw, dh)
   offCtx.globalCompositeOperation = "screen"
   offCtx.fillStyle = hexToRgba(filter.faceTintHex, 0.1)
-  offCtx.fillRect(0, 0, destW, destH)
+  offCtx.fillRect(0, 0, dw, dh)
   offCtx.globalCompositeOperation = "source-over"
   return off
 }
