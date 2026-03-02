@@ -153,53 +153,47 @@ export function renderPoster(
   canvas.width = width
   canvas.height = height
 
-  // Inset padding so the bg.png decorative borders are always visible
+  // Inset padding so bg.png decorative borders are visible around the edges
   const PAD = Math.round(width * 0.012) // ~12px at 1080w
 
-  const cover = getCoverCoords(image.width, image.height, width - PAD * 2, height - PAD * 2)
+  // Cover coordinates for the speaker image within the padded inner area
+  const innerW = width - PAD * 2
+  const innerH = height - PAD * 2
+  const cover = getCoverCoords(image.width, image.height, innerW, innerH)
 
   // ── 1) Dark base fill ───────────────────────────────────────────
   ctx.fillStyle = "#111111"
   ctx.fillRect(0, 0, width, height)
 
-  // ── 2) Background: full speaker image, B&W + blur + grain ──────
+  // ── 2) Speaker image as blurred B&W background, INSIDE padded area
   {
     const bgOff = document.createElement("canvas")
-    bgOff.width = width
-    bgOff.height = height
+    bgOff.width = innerW
+    bgOff.height = innerH
     const bgCtx = bgOff.getContext("2d")!
 
     bgCtx.fillStyle = "#111111"
-    bgCtx.fillRect(0, 0, width, height)
+    bgCtx.fillRect(0, 0, innerW, innerH)
 
-    bgCtx.filter = `grayscale(100%) blur(${filter.bgBlur}px) brightness(0.3)`
     const blurPad = filter.bgBlur * 2
+    bgCtx.filter = `grayscale(100%) blur(${filter.bgBlur}px) brightness(0.3)`
     bgCtx.drawImage(
       image,
       cover.sx, cover.sy, cover.sw, cover.sh,
-      PAD - blurPad, PAD - blurPad,
-      width - PAD * 2 + blurPad * 2,
-      height - PAD * 2 + blurPad * 2
+      -blurPad, -blurPad,
+      innerW + blurPad * 2,
+      innerH + blurPad * 2
     )
     bgCtx.filter = "none"
 
-    ctx.drawImage(bgOff, 0, 0)
+    // Draw the blurred speaker into the padded inner area
+    ctx.drawImage(bgOff, PAD, PAD)
   }
 
-  // Background grain
-  tileGrain(ctx, 0, 0, width, height, filter.bgGrain)
+  // Background grain (only on inner area)
+  tileGrain(ctx, PAD, PAD, innerW, innerH, filter.bgGrain)
 
-  // ── 3) Overlay bg.png template on top ──────────────────────────
-  if (bgImage) {
-    const bgCover = getCoverCoords(bgImage.width, bgImage.height, width, height)
-    ctx.drawImage(
-      bgImage,
-      bgCover.sx, bgCover.sy, bgCover.sw, bgCover.sh,
-      0, 0, width, height
-    )
-  }
-
-  // ── 4) Determine crop region based on template ─────────────────
+  // ── 3) Determine crop region based on template ─────────────────
   let cropRegion: FaceBox
   if (template === "eyes") {
     cropRegion = detection.eyesRegion
@@ -208,12 +202,7 @@ export function renderPoster(
   }
   const clamped = clampBox(cropRegion, image.width, image.height)
 
-  // ── 5) Compute box position & size ─────────────────────────────
-  // All positions are within the padded area
-  const innerX = PAD
-  const innerW = width - PAD * 2
-  const innerH = height - PAD * 2
-
+  // ── 4) Compute box position & size ─────────────────────────────
   const boxMarginRight = innerW * 0.04
   const boxMaxWidth = innerW * 0.48
   const boxMaxHeight = innerH * 0.52
@@ -222,6 +211,7 @@ export function renderPoster(
   let boxX: number, boxY: number, boxWidth: number, boxHeight: number
 
   if (filter.overlay) {
+    // Map face crop to its real position in the poster
     const mapped = imgToCanvas(
       clamped.x, clamped.y, clamped.width, clamped.height,
       innerW, innerH, cover
@@ -231,6 +221,7 @@ export function renderPoster(
     boxWidth = mapped.w
     boxHeight = mapped.h
   } else {
+    // Standard positioning: crop box on the right side
     const cropAspect = clamped.width / clamped.height
     if (cropAspect > boxMaxWidth / boxMaxHeight) {
       boxWidth = boxMaxWidth
@@ -239,11 +230,11 @@ export function renderPoster(
       boxHeight = boxMaxHeight
       boxWidth = boxMaxHeight * cropAspect
     }
-    boxX = innerX + innerW - boxWidth - boxMarginRight
+    boxX = PAD + innerW - boxWidth - boxMarginRight
     boxY = boxTopOffset
   }
 
-  // ── 6) Draw the grayscale + tinted face crop into box ──────────
+  // ── 5) Draw the grayscale + tinted face crop into box ──────────
   {
     const tintedCrop = renderGrayscaleTinted(
       image,
@@ -266,7 +257,7 @@ export function renderPoster(
   ctx.lineWidth = 2
   ctx.strokeRect(boxX, boxY, boxWidth, boxHeight)
 
-  // ── 7) Badge label — OUTSIDE the box, touching top-right corner
+  // ── 6) Badge label — OUTSIDE box, touching top-right corner ────
   {
     const badgeText = speaker.badgeLabel.toUpperCase()
     const badgeFontSize = Math.round(width * 0.016)
@@ -278,7 +269,7 @@ export function renderPoster(
     const badgeW = width * 0.042
     const badgeH = badgeTextW + badgePadY * 2
 
-    // Badge sits OUTSIDE: left edge of badge = right edge of box
+    // Badge left edge = box right edge (extends outward)
     const badgeX = boxX + boxWidth
     const badgeY = boxY
 
@@ -296,14 +287,14 @@ export function renderPoster(
     ctx.restore()
   }
 
-  // ── 8) Small portrait — same grayscale + tint filter, 5% smaller
-  {
-    const portraitSize = width * 0.19
-    const portraitX = innerX + innerW * 0.06
-    const portraitY = filter.overlay
-      ? Math.max(boxY + boxHeight + innerH * 0.03, PAD + innerH * 0.5)
-      : PAD + innerH * 0.55
+  // ── 7) Small portrait — same grayscale + tint filter ───────────
+  const portraitSize = width * 0.19
+  const portraitX = PAD + innerW * 0.06
+  const portraitY = filter.overlay
+    ? Math.max(boxY + boxHeight + innerH * 0.03, PAD + innerH * 0.5)
+    : PAD + innerH * 0.55
 
+  {
     const tintedPortrait = renderGrayscaleTinted(
       image,
       0, 0, image.width, image.height,
@@ -336,8 +327,19 @@ export function renderPoster(
     ctx.stroke()
   }
 
-  // ── 9) Smart text layout ───────────────────────────────────────
-  const textLeftX = innerX + innerW * 0.06
+  // ── 8) Overlay bg.png ON TOP of everything (frame layer) ───────
+  // This goes LAST so its decorative borders sit above the speaker content
+  if (bgImage) {
+    const bgCover = getCoverCoords(bgImage.width, bgImage.height, width, height)
+    ctx.drawImage(
+      bgImage,
+      bgCover.sx, bgCover.sy, bgCover.sw, bgCover.sh,
+      0, 0, width, height
+    )
+  }
+
+  // ── 9) Smart text layout (drawn AFTER bg.png so text is readable)
+  const textLeftX = PAD + innerW * 0.06
 
   const badgeOuterRight = boxX + boxWidth + width * 0.042
   const boxLeftEdge = boxX
@@ -346,7 +348,7 @@ export function renderPoster(
     : boxLeftEdge
   const textMaxWidth = Math.max(rightObstacle - textLeftX - width * 0.04, width * 0.25)
 
-  // ── 9a) Event title — thinner font weight (semibold) ──────────
+  // ── 9a) Event title — semibold ─────────────────────────────────
   let titleY = PAD + innerH * 0.15
   const titleFontSize = Math.round(width * 0.042)
   ctx.fillStyle = "#ffffff"
@@ -359,7 +361,7 @@ export function renderPoster(
     titleY += titleFontSize * 1.25
   }
 
-  // ── 9b) Date text — bolder + accent pink color ────────────────
+  // ── 9b) Date text — bold + accent pink ─────────────────────────
   const dateY = titleY + height * 0.02
   const dateFontSize = Math.round(width * 0.02)
   ctx.fillStyle = filter.accentColor
@@ -371,13 +373,8 @@ export function renderPoster(
     currentDateY += dateFontSize * 1.5
   }
 
-  // ── 9c) Speaker name — WHITE, large ───────────────────────────
-  const portraitSize = width * 0.19
-  const portraitY = filter.overlay
-    ? Math.max(boxY + boxHeight + innerH * 0.03, PAD + innerH * 0.5)
-    : PAD + innerH * 0.55
+  // ── 9c) Speaker name — WHITE, large ────────────────────────────
   const portraitBottomY = portraitY + portraitSize
-
   const nameY = portraitBottomY + height * 0.07
   const nameFontSize = Math.round(width * 0.065)
   ctx.fillStyle = "#ffffff"
@@ -405,8 +402,8 @@ export function renderPoster(
     currentNameY += nameFontSize * 1.1
   }
 
-  // ── 9d) Speaker role — green, slightly larger, tight to name ──
-  const roleY = currentNameY + height * 0.005
+  // ── 9d) Speaker role — green, tight gap to name ────────────────
+  const roleY = currentNameY + height * 0.001
   const roleFontSize = Math.round(width * 0.022)
   ctx.fillStyle = "#4ade80"
   ctx.font = `500 ${roleFontSize}px "Geist", sans-serif`
