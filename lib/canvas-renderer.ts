@@ -32,15 +32,18 @@ function tileGrain(
 ) {
   if (alpha <= 0) return
   const grain = getGrainTexture()
+  ctx.save()
   ctx.globalAlpha = alpha
   ctx.globalCompositeOperation = "overlay"
+  ctx.beginPath()
+  ctx.rect(x, y, w, h)
+  ctx.clip()
   for (let gx = x; gx < x + w; gx += 512) {
     for (let gy = y; gy < y + h; gy += 512) {
       ctx.drawImage(grain, gx, gy)
     }
   }
-  ctx.globalCompositeOperation = "source-over"
-  ctx.globalAlpha = 1
+  ctx.restore()
 }
 
 // ── Helper: cover-fit source coordinates ────────────────────────────
@@ -85,6 +88,74 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r},${g},${b},${alpha})`
 }
 
+// ── Convert image coordinates to poster "cover" coordinates ─────────
+function imgToCanvas(
+  imgX: number,
+  imgY: number,
+  imgW: number,
+  imgH: number,
+  canvasW: number,
+  canvasH: number,
+  cover: { sx: number; sy: number; sw: number; sh: number }
+) {
+  const scaleX = canvasW / cover.sw
+  const scaleY = canvasH / cover.sh
+  return {
+    x: (imgX - cover.sx) * scaleX,
+    y: (imgY - cover.sy) * scaleY,
+    w: imgW * scaleX,
+    h: imgH * scaleY,
+  }
+}
+
+// ── Draw the face crop as a grayscale image + tint ──────────────────
+function drawFaceCropGrayscaleTinted(
+  ctx: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  srcBox: FaceBox,
+  destX: number,
+  destY: number,
+  destW: number,
+  destH: number,
+  filter: FilterSettings
+) {
+  // 1) Draw cropped face to offscreen canvas with grayscale
+  const off = document.createElement("canvas")
+  off.width = Math.ceil(destW)
+  off.height = Math.ceil(destH)
+  const offCtx = off.getContext("2d")!
+
+  // Grayscale first
+  offCtx.filter = "grayscale(100%)"
+  offCtx.drawImage(
+    image,
+    srcBox.x,
+    srcBox.y,
+    srcBox.width,
+    srcBox.height,
+    0,
+    0,
+    destW,
+    destH
+  )
+  offCtx.filter = "none"
+
+  // 2) Color tint on top with multiply
+  offCtx.globalCompositeOperation = "multiply"
+  offCtx.fillStyle = hexToRgba(filter.faceTintHex, filter.faceTintOpacity)
+  offCtx.fillRect(0, 0, destW, destH)
+  offCtx.globalCompositeOperation = "source-over"
+
+  // 3) Lighter screen layer for depth
+  offCtx.globalCompositeOperation = "screen"
+  offCtx.fillStyle = hexToRgba(filter.faceTintHex, 0.12)
+  offCtx.fillRect(0, 0, destW, destH)
+  offCtx.globalCompositeOperation = "source-over"
+
+  // 4) Draw to main context
+  ctx.drawImage(off, destX, destY)
+}
+
 // ── Main render function ────────────────────────────────────────────
 export function renderPoster(
   canvas: HTMLCanvasElement,
@@ -109,8 +180,14 @@ export function renderPoster(
   bgCtx.filter = `grayscale(100%) blur(${filter.bgBlur}px) brightness(0.35)`
   bgCtx.drawImage(
     image,
-    cover.sx, cover.sy, cover.sw, cover.sh,
-    0, 0, width, height
+    cover.sx,
+    cover.sy,
+    cover.sw,
+    cover.sh,
+    0,
+    0,
+    width,
+    height
   )
   bgCtx.filter = "none"
 
@@ -119,58 +196,68 @@ export function renderPoster(
   // grain overlay on background
   tileGrain(ctx, 0, 0, width, height, filter.bgGrain)
 
-  // ── 3) Face crop box (right side) — ASPECT RATIO PRESERVED ─────
+  // ── 3) Face crop box — depends on template ─────────────────────
   const boxMarginRight = width * 0.04
   const boxMaxWidth = width * 0.48
   const boxMaxHeight = height * 0.52
-  const boxTop = height * 0.06
+  const boxTopOffset = height * 0.06
 
   // Get the crop region from face detection
-  const cropRegion =
-    template === "half-face" ? detection.rightHalfBox : detection.eyesRegion
+  let cropRegion: FaceBox
+  if (template === "eyes") {
+    cropRegion = detection.eyesRegion
+  } else {
+    // half-face and overlay both use the right-half crop for the BOX
+    cropRegion = detection.rightHalfBox
+  }
   const clamped = clampBox(cropRegion, image.width, image.height)
 
-  // Calculate the box dimensions that PRESERVE the crop's aspect ratio
-  const cropAspect = clamped.width / clamped.height
-  let boxWidth: number
-  let boxHeight: number
+  let boxX: number, boxY: number, boxWidth: number, boxHeight: number
 
-  if (cropAspect > boxMaxWidth / boxMaxHeight) {
-    // crop is wider — fit to max width
-    boxWidth = boxMaxWidth
-    boxHeight = boxMaxWidth / cropAspect
+  if (template === "overlay") {
+    // ── OVERLAY: position the box exactly where the face maps onto the poster
+    const mapped = imgToCanvas(
+      clamped.x,
+      clamped.y,
+      clamped.width,
+      clamped.height,
+      width,
+      height,
+      cover
+    )
+    boxX = mapped.x
+    boxY = mapped.y
+    boxWidth = mapped.w
+    boxHeight = mapped.h
   } else {
-    // crop is taller — fit to max height
-    boxHeight = boxMaxHeight
-    boxWidth = boxMaxHeight * cropAspect
+    // ── HALF-FACE / EYES: right-side box preserving aspect ratio
+    const cropAspect = clamped.width / clamped.height
+    if (cropAspect > boxMaxWidth / boxMaxHeight) {
+      boxWidth = boxMaxWidth
+      boxHeight = boxMaxWidth / cropAspect
+    } else {
+      boxHeight = boxMaxHeight
+      boxWidth = boxMaxHeight * cropAspect
+    }
+    boxX = width - boxWidth - boxMarginRight
+    boxY = boxTopOffset
   }
 
-  const boxX = width - boxWidth - boxMarginRight
-  const boxY = boxTop
-
-  // Draw the cropped face into the box (no stretching)
+  // Draw the grayscale + tinted face crop into the box
   ctx.save()
   ctx.beginPath()
   ctx.rect(boxX, boxY, boxWidth, boxHeight)
   ctx.clip()
-  ctx.drawImage(
+  drawFaceCropGrayscaleTinted(
+    ctx,
     image,
-    clamped.x, clamped.y, clamped.width, clamped.height,
-    boxX, boxY, boxWidth, boxHeight
+    clamped,
+    boxX,
+    boxY,
+    boxWidth,
+    boxHeight,
+    filter
   )
-
-  // Color tint with configurable hex and opacity
-  ctx.globalCompositeOperation = "multiply"
-  ctx.fillStyle = hexToRgba(filter.faceTintHex, filter.faceTintOpacity)
-  ctx.fillRect(boxX, boxY, boxWidth, boxHeight)
-  ctx.globalCompositeOperation = "source-over"
-
-  // Lighter screen layer for depth
-  ctx.globalCompositeOperation = "screen"
-  ctx.fillStyle = hexToRgba(filter.faceTintHex, 0.15)
-  ctx.fillRect(boxX, boxY, boxWidth, boxHeight)
-  ctx.globalCompositeOperation = "source-over"
-
   // Grain on the face crop
   tileGrain(ctx, boxX, boxY, boxWidth, boxHeight, filter.faceGrain)
   ctx.restore()
@@ -180,7 +267,7 @@ export function renderPoster(
   ctx.lineWidth = 2
   ctx.strokeRect(boxX, boxY, boxWidth, boxHeight)
 
-  // ── 4) Badge (editable label, e.g. "PARTICIPANTE") ────────────
+  // ── 4) Badge at top-right corner of the box ────────────────────
   const badgeText = speaker.badgeLabel.toUpperCase()
   const badgeFontSize = Math.round(width * 0.016)
   ctx.font = `bold ${badgeFontSize}px "Geist", sans-serif`
@@ -188,11 +275,15 @@ export function renderPoster(
 
   const badgeW = width * 0.042
   const badgeH = badgeTextWidth + badgeFontSize * 2.5
-  const badgeX = boxX + boxWidth - badgeW / 2
-  const badgeY = boxY + 10
+
+  // Badge sits flush with the top-right corner of the box
+  // Right edge of badge aligns with right edge of box
+  // Top of badge aligns with top edge of box
+  const badgeCenterX = boxX + boxWidth - badgeW / 2
+  const badgeCenterY = boxY + badgeH / 2
 
   ctx.save()
-  ctx.translate(badgeX + badgeW / 2, badgeY + badgeH / 2)
+  ctx.translate(badgeCenterX, badgeCenterY)
   ctx.fillStyle = filter.accentColor
   ctx.fillRect(-badgeW / 2, -badgeH / 2, badgeW, badgeH)
 
@@ -207,7 +298,11 @@ export function renderPoster(
   // ── 5) Small portrait with green brackets ──────────────────────
   const portraitSize = width * 0.2
   const portraitX = width * 0.1
-  const portraitY = height * 0.55
+  // Smart placement: portrait sits below the box if overlay, otherwise at 55%
+  const portraitY =
+    template === "overlay"
+      ? Math.max(boxY + boxHeight + height * 0.03, height * 0.5)
+      : height * 0.55
   const bracketPad = 8
   const bracketLen = 14
 
@@ -250,31 +345,58 @@ export function renderPoster(
   ctx.arc(sheepX, sheepY + sheepSize * 0.4, sheepSize * 0.45, 0, Math.PI * 2)
   ctx.fill()
   ctx.beginPath()
-  ctx.arc(sheepX + sheepSize * 0.35, sheepY + sheepSize * 0.15, sheepSize * 0.22, 0, Math.PI * 2)
+  ctx.arc(
+    sheepX + sheepSize * 0.35,
+    sheepY + sheepSize * 0.15,
+    sheepSize * 0.22,
+    0,
+    Math.PI * 2
+  )
   ctx.fill()
-  ctx.fillRect(sheepX - sheepSize * 0.25, sheepY + sheepSize * 0.7, sheepSize * 0.08, sheepSize * 0.3)
-  ctx.fillRect(sheepX + sheepSize * 0.15, sheepY + sheepSize * 0.7, sheepSize * 0.08, sheepSize * 0.3)
+  ctx.fillRect(
+    sheepX - sheepSize * 0.25,
+    sheepY + sheepSize * 0.7,
+    sheepSize * 0.08,
+    sheepSize * 0.3
+  )
+  ctx.fillRect(
+    sheepX + sheepSize * 0.15,
+    sheepY + sheepSize * 0.7,
+    sheepSize * 0.08,
+    sheepSize * 0.3
+  )
 
-  // ── 7) Event title text ────────────────────────────────────────
-  const titleX = width * 0.1
+  // ── 7) Smart text layout ───────────────────────────────────────
+  // Determine the text zone: always to the LEFT of the box
+  // For overlay, the box can be anywhere so we need to adapt
+
+  const textLeftX = width * 0.1
+  // Available width for title text = from left margin to box left edge (with gap)
+  const textMaxWidth =
+    template === "overlay"
+      ? Math.min(boxX - textLeftX - width * 0.04, width * 0.5)
+      : boxX - textLeftX - width * 0.05
+
+  // ── 7a) Event title ────────────────────────────────────────────
   let titleY = height * 0.15
   const titleFontSize = Math.round(width * 0.042)
   ctx.fillStyle = "#ffffff"
   ctx.font = `bold ${titleFontSize}px "Geist Mono", monospace`
   ctx.textAlign = "left"
 
+  const availTitleWidth = Math.max(textMaxWidth, width * 0.3)
   const titleLines = wrapText(
     ctx,
     speaker.eventTitle.toUpperCase(),
-    boxX - titleX - width * 0.05,
+    availTitleWidth,
     titleFontSize
   )
   for (const line of titleLines) {
-    ctx.fillText(line, titleX, titleY)
+    ctx.fillText(line, textLeftX, titleY)
     titleY += titleFontSize * 1.25
   }
 
-  // ── 8) Date text ───────────────────────────────────────────────
+  // ── 7b) Date text ─────────────────────────────────────────────
   const dateY = titleY + height * 0.02
   const dateFontSize = Math.round(width * 0.02)
   ctx.fillStyle = "#4ade80"
@@ -282,26 +404,42 @@ export function renderPoster(
   const dateLines = speaker.eventDate.split("\n")
   let currentDateY = dateY
   for (const line of dateLines) {
-    ctx.fillText(line.toUpperCase(), titleX, currentDateY)
+    ctx.fillText(line.toUpperCase(), textLeftX, currentDateY)
     currentDateY += dateFontSize * 1.5
   }
 
-  // ── 9) Speaker name (large, accent color) ──────────────────────
+  // ── 7c) Speaker name (large, accent color) ────────────────────
+  // Position it below the portrait
   const nameY = portraitY + portraitSize + height * 0.07
   const nameFontSize = Math.round(width * 0.065)
   ctx.fillStyle = filter.accentColor
   ctx.font = `900 ${nameFontSize}px "Geist", sans-serif`
   ctx.textAlign = "left"
 
+  // Smart name wrapping: if the name overflows the poster, wrap it
+  const nameMaxWidth = width * 0.8
   const nameWords = speaker.name.toUpperCase().split(" ")
   let currentNameY = nameY
+  let currentNameLine = ""
+
   for (const word of nameWords) {
-    ctx.fillText(word, titleX, currentNameY)
+    const testLine = currentNameLine ? `${currentNameLine} ${word}` : word
+    const testWidth = ctx.measureText(testLine).width
+    if (testWidth > nameMaxWidth && currentNameLine) {
+      ctx.fillText(currentNameLine, textLeftX, currentNameY)
+      currentNameY += nameFontSize * 1.1
+      currentNameLine = word
+    } else {
+      currentNameLine = testLine
+    }
+  }
+  if (currentNameLine) {
+    ctx.fillText(currentNameLine, textLeftX, currentNameY)
     currentNameY += nameFontSize * 1.1
   }
 
-  // ── 10) Speaker role ───────────────────────────────────────────
-  const roleY = currentNameY + height * 0.015
+  // ── 7d) Speaker role ──────────────────────────────────────────
+  const roleY = currentNameY + height * 0.01
   const roleFontSize = Math.round(width * 0.018)
   ctx.fillStyle = "#ffffff"
   ctx.font = `${roleFontSize}px "Geist", sans-serif`
@@ -309,15 +447,15 @@ export function renderPoster(
   const roleLines = wrapText(
     ctx,
     speaker.role.toUpperCase(),
-    width * 0.4,
+    width * 0.5,
     roleFontSize
   )
   for (let i = 0; i < roleLines.length; i++) {
-    ctx.fillText(roleLines[i], titleX, roleY + i * roleFontSize * 1.5)
+    ctx.fillText(roleLines[i], textLeftX, roleY + i * roleFontSize * 1.5)
   }
   ctx.letterSpacing = "0px"
 
-  // ── 11) Side text (rotated) ────────────────────────────────────
+  // ── 8) Side text (rotated) ────────────────────────────────────
   const sideTextFont = `${Math.round(width * 0.013)}px "Geist Mono", monospace`
 
   ctx.save()
@@ -342,7 +480,7 @@ export function renderPoster(
   ctx.letterSpacing = "0px"
   ctx.restore()
 
-  // ── 12) Crosshair decorations ──────────────────────────────────
+  // ── 9) Crosshair decorations ──────────────────────────────────
   drawCrosshair(ctx, width * 0.04, height * 0.04, width * 0.02)
   drawCrosshair(ctx, width * 0.96, height * 0.04, width * 0.02)
   drawCrosshair(ctx, width * 0.04, height * 0.96, width * 0.02)

@@ -38,7 +38,7 @@ export interface FaceDetectionResult {
   landmarks: { x: number; y: number }[]
 }
 
-export type TemplateType = "half-face" | "eyes"
+export type TemplateType = "half-face" | "eyes" | "overlay"
 
 export interface PosterOptions {
   speaker: SpeakerData

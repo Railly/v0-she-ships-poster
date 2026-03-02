@@ -1,6 +1,6 @@
 "use client"
 
-import { Download, Eye, ScanFace, Loader2 } from "lucide-react"
+import { Download, Eye, ScanFace, Layers, Loader2 } from "lucide-react"
 import type { TemplateType, FilterSettings } from "@/lib/types"
 
 interface PosterControlsProps {
@@ -40,11 +40,11 @@ export function PosterControls({
         Template
       </h2>
 
-      <div className="flex gap-3">
+      <div className="grid grid-cols-3 gap-2">
         <button
           type="button"
           onClick={() => onTemplateChange("half-face")}
-          className={`flex-1 flex flex-col items-center gap-2 rounded border px-4 py-4 text-xs font-mono uppercase tracking-wider transition-colors cursor-pointer ${
+          className={`flex flex-col items-center gap-2 rounded border px-3 py-3 text-[10px] font-mono uppercase tracking-wider transition-colors cursor-pointer ${
             template === "half-face"
               ? "border-[#E49BC2] bg-[#E49BC2]/10 text-[#E49BC2]"
               : "border-[#333] bg-[#1a1a1a] text-[#a0a0a0] hover:border-[#555]"
@@ -56,7 +56,7 @@ export function PosterControls({
         <button
           type="button"
           onClick={() => onTemplateChange("eyes")}
-          className={`flex-1 flex flex-col items-center gap-2 rounded border px-4 py-4 text-xs font-mono uppercase tracking-wider transition-colors cursor-pointer ${
+          className={`flex flex-col items-center gap-2 rounded border px-3 py-3 text-[10px] font-mono uppercase tracking-wider transition-colors cursor-pointer ${
             template === "eyes"
               ? "border-[#E49BC2] bg-[#E49BC2]/10 text-[#E49BC2]"
               : "border-[#333] bg-[#1a1a1a] text-[#a0a0a0] hover:border-[#555]"
@@ -64,6 +64,18 @@ export function PosterControls({
         >
           <Eye className="h-5 w-5" />
           Eyes Only
+        </button>
+        <button
+          type="button"
+          onClick={() => onTemplateChange("overlay")}
+          className={`flex flex-col items-center gap-2 rounded border px-3 py-3 text-[10px] font-mono uppercase tracking-wider transition-colors cursor-pointer ${
+            template === "overlay"
+              ? "border-[#E49BC2] bg-[#E49BC2]/10 text-[#E49BC2]"
+              : "border-[#333] bg-[#1a1a1a] text-[#a0a0a0] hover:border-[#555]"
+          }`}
+        >
+          <Layers className="h-5 w-5" />
+          Overlay
         </button>
       </div>
 
