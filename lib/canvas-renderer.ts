@@ -107,7 +107,7 @@ function renderGrayscaleTinted(
   return off
 }
 
-// ── BACKGROUND: draw blurred B&W with offset, filling gaps ──────────
+// ── BACKGROUND: single draw at offset, blur hides edge gaps ─────────
 function drawBackground(
   ctx: CanvasRenderingContext2D,
   image: HTMLImageElement,
@@ -119,52 +119,25 @@ function drawBackground(
   ctx.fillStyle = "#111111"
   ctx.fillRect(0, 0, width, height)
 
-  // We draw the sharp image TWICE on an offscreen canvas:
-  //   1. Once at (0,0) to fill the entire poster (gap-filler)
-  //   2. Once at (offsetX, offsetY) to align face with overlay box
-  // Then blur the whole thing. The second draw overwrites the first
-  // where they overlap, and the first fills any edge gaps.
-
-  const pad = Math.max(filter.bgBlur * 3, 50)
-  const bigW = width + pad * 2
-  const bigH = height + pad * 2
-
+  // Single draw at offset position. The heavy blur (12-20px) naturally
+  // spreads image pixels into any small gap from the offset, and
+  // brightness(0.3) makes any remaining edge barely visible.
   const sharpOff = document.createElement("canvas")
-  sharpOff.width = bigW
-  sharpOff.height = bigH
+  sharpOff.width = width
+  sharpOff.height = height
   const sc = sharpOff.getContext("2d")!
   sc.fillStyle = "#111111"
-  sc.fillRect(0, 0, bigW, bigH)
-
-  // Layer 1: full cover at (pad, pad) -- fills entire area, no gaps
+  sc.fillRect(0, 0, width, height)
   sc.drawImage(
     image,
     cover.sx, cover.sy, cover.sw, cover.sh,
-    pad, pad, width, height
+    bgOffsetX, bgOffsetY, width, height
   )
 
-  // Layer 2: same image at (pad + offset, pad + offset) -- aligns face
-  // This overdraw ONLY matters in the overlapping area (most of the canvas)
-  // and the non-overlapping edges keep the gap-filler from layer 1
-  if (bgOffsetX !== 0 || bgOffsetY !== 0) {
-    sc.drawImage(
-      image,
-      cover.sx, cover.sy, cover.sw, cover.sh,
-      pad + bgOffsetX, pad + bgOffsetY, width, height
-    )
-  }
-
-  // Blur + grayscale the combined result
-  const blurOff = document.createElement("canvas")
-  blurOff.width = bigW
-  blurOff.height = bigH
-  const bc = blurOff.getContext("2d")!
-  bc.filter = `grayscale(100%) blur(${filter.bgBlur}px) brightness(0.3)`
-  bc.drawImage(sharpOff, 0, 0)
-  bc.filter = "none"
-
-  // Crop center back to poster
-  ctx.drawImage(blurOff, pad, pad, width, height, 0, 0, width, height)
+  // Apply blur + grayscale directly to main canvas
+  ctx.filter = `grayscale(100%) blur(${filter.bgBlur}px) brightness(0.3)`
+  ctx.drawImage(sharpOff, 0, 0)
+  ctx.filter = "none"
 }
 
 // ── Main render function ────────────────────────────────────────────
@@ -209,8 +182,9 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
     }
 
     // Push into safe zone using offset (so BG moves with box)
-    const safeTop = height * 0.10
-    const safeBottom = height * 0.58
+    // Eyes/smile: push box further down to center it better vertically
+    const safeTop = (template === "half-face") ? height * 0.10 : height * 0.18
+    const safeBottom = height * 0.55
 
     if (boxY < safeTop) { bgOffsetY = safeTop - boxY }
     else if (boxY + boxH > safeBottom) { bgOffsetY = safeBottom - (boxY + boxH) }
@@ -295,25 +269,58 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
     ctx.restore()
   }
 
-  // ── 4) PORTRAIT — smart positioning ────────────────────────────
-  // Sizing
+  // ── 4) bg.png frame overlay (before text so text is on top) ────
+  if (bgImage) {
+    const bgCover = getCoverCoords(bgImage.width, bgImage.height, width, height)
+    ctx.drawImage(bgImage, bgCover.sx, bgCover.sy, bgCover.sw, bgCover.sh, 0, 0, width, height)
+  }
+
+  // ── 5+6) PORTRAIT + NAME + ROLE — anchored from bottom up ─────
+  // ALL templates use the same constrained text width and bottom anchoring.
+  // Layout is built from the canvas bottom upward so text never clips.
+
+  const nameFontSize = Math.round(width * 0.075)
+  const roleFontSize = Math.round(width * 0.026)
+  const textX = margin
+  const textMaxW = width * 0.46 // constrained for all templates
+
+  // Pre-calculate role lines
+  ctx.font = `600 ${roleFontSize}px "Geist", sans-serif`
+  const roleLines = wrapText(ctx, speaker.role.toUpperCase(), textMaxW)
+  const roleBlockH = roleLines.length * roleFontSize * 1.3
+
+  // Pre-calculate name lines
+  ctx.font = `900 ${nameFontSize}px "Geist", sans-serif`
+  const nameWords = speaker.name.toUpperCase().split(" ")
+  const nameLines: string[] = []
+  let tmpLine = ""
+  for (const word of nameWords) {
+    const test = tmpLine ? `${tmpLine} ${word}` : word
+    if (ctx.measureText(test).width > textMaxW && tmpLine) {
+      nameLines.push(tmpLine)
+      tmpLine = word
+    } else { tmpLine = test }
+  }
+  if (tmpLine) nameLines.push(tmpLine)
+  const nameBlockH = nameLines.length * nameFontSize * 1.05
+
+  // Portrait sizing
   const imgAspect = image.width / image.height
   const pScale = width * 0.12
   let pW: number, pH: number
   if (imgAspect > 1) { pW = pScale; pH = pScale / imgAspect }
   else { pH = pScale; pW = pScale * imgAspect }
 
-  // For half-face: portrait on the LEFT, bottom-aligned with box
-  // For eyes/smile: portrait below the box, left side
-  let pX: number, pY: number
-  if (template === "half-face") {
-    pX = margin
-    pY = boxY + boxH - pH
-  } else {
-    pX = margin
-    pY = boxY + boxH + height * 0.02
-  }
+  // Bottom anchor: role ends at 92% of canvas height
+  const bottomEdge = height * 0.92
+  const roleStartY = bottomEdge - roleBlockH
+  const nameRoleGap = nameFontSize * 0.25
+  const nameStartY = roleStartY - nameRoleGap - nameBlockH + nameFontSize
+  const portraitGap = height * 0.012
+  const pY = nameStartY - nameFontSize * 0.25 - pH - portraitGap
+  const pX = margin
 
+  // Draw portrait
   {
     const tp = renderGrayscaleTinted(
       image, 0, 0, image.width, image.height, pW, pH, filter
@@ -336,72 +343,19 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
     ctx.stroke()
   }
 
-  // ── 5) bg.png frame overlay ────────────────────────────────────
-  if (bgImage) {
-    const bgCover = getCoverCoords(bgImage.width, bgImage.height, width, height)
-    ctx.drawImage(bgImage, bgCover.sx, bgCover.sy, bgCover.sw, bgCover.sh, 0, 0, width, height)
-  }
-
-  // ── 6) NAME + ROLE TEXT ────────────────────────────────────────
-  // Text ALWAYS starts after both the box bottom and portrait bottom
-  // to guarantee it's never clipped and never collides
-  const nameFontSize = Math.round(width * 0.075)
-  const roleFontSize = Math.round(width * 0.026)
-
-  const textX = margin
-  let textMaxW: number
-  let textStartY: number
-
-  if (template === "half-face") {
-    // Text on the left, constrained to space before the box
-    textMaxW = boxX - margin - width * 0.02
-    // Start below portrait (which is bottom-aligned with box)
-    textStartY = pY + pH + height * 0.03
-  } else {
-    // Text full width, below both box and portrait
-    textMaxW = width * 0.88
-    const bottomMost = Math.max(boxY + boxH, pY + pH)
-    textStartY = bottomMost + height * 0.03
-  }
-
-  // Clamp: if text would go past 92% of height, push it up
-  const maxTextBottom = height * 0.92
-  // Estimate total text height (name ~2 lines + role ~2 lines)
-  const estTextH = nameFontSize * 2.2 + roleFontSize * 3
-  if (textStartY + estTextH > maxTextBottom) {
-    textStartY = maxTextBottom - estTextH
-  }
-
   // Draw name
   ctx.fillStyle = "#ffffff"
   ctx.font = `900 ${nameFontSize}px "Geist", sans-serif`
   ctx.textAlign = "left"
-
-  const nameWords = speaker.name.toUpperCase().split(" ")
-  let curY = textStartY
-  let curLine = ""
-
-  for (const word of nameWords) {
-    const test = curLine ? `${curLine} ${word}` : word
-    if (ctx.measureText(test).width > textMaxW && curLine) {
-      ctx.fillText(curLine, textX, curY)
-      curY += nameFontSize * 1.08
-      curLine = word
-    } else {
-      curLine = test
-    }
-  }
-  if (curLine) {
-    ctx.fillText(curLine, textX, curY)
-    curY += nameFontSize * 0.4  // very tight gap before role
+  for (let i = 0; i < nameLines.length; i++) {
+    ctx.fillText(nameLines[i], textX, nameStartY + i * nameFontSize * 1.05)
   }
 
-  // Role — nearly zero gap from name
+  // Draw role — tight gap from name
   ctx.fillStyle = "#4ade80"
   ctx.font = `600 ${roleFontSize}px "Geist", sans-serif`
-  const roleLines = wrapText(ctx, speaker.role.toUpperCase(), textMaxW)
   for (let i = 0; i < roleLines.length; i++) {
-    ctx.fillText(roleLines[i], textX, curY + i * roleFontSize * 1.35)
+    ctx.fillText(roleLines[i], textX, roleStartY + i * roleFontSize * 1.3)
   }
 }
 
