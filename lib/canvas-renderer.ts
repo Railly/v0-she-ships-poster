@@ -282,9 +282,8 @@ export function renderPoster(
   }
 
   // ── 7) Small portrait — same grayscale + tint filter ───────────
-  // Portrait: fit within a max area while preserving aspect ratio
-  const portraitMaxW = width * 0.19
-  const portraitMaxH = height * 0.19
+  const portraitMaxW = width * 0.18
+  const portraitMaxH = height * 0.18
   const imgAspect = image.width / image.height
   let portraitW: number, portraitH: number
   if (imgAspect > portraitMaxW / portraitMaxH) {
@@ -295,10 +294,11 @@ export function renderPoster(
     portraitW = portraitMaxH * imgAspect
   }
 
+  // Position portrait in the left area, vertically centered in upper half
   const portraitX = width * 0.06
   const portraitY = filter.overlay
-    ? Math.max(boxY + boxHeight + height * 0.03, height * 0.5)
-    : height * 0.55
+    ? Math.max(boxY + boxHeight + height * 0.04, height * 0.42)
+    : height * 0.38
 
   {
     const tintedPortrait = renderGrayscaleTinted(
@@ -334,7 +334,6 @@ export function renderPoster(
   }
 
   // ── 8) Overlay bg.png ON TOP of everything (frame layer) ───────
-  // This goes LAST so its decorative borders sit above the speaker content
   if (bgImage) {
     const bgCover = getCoverCoords(bgImage.width, bgImage.height, width, height)
     ctx.drawImage(
@@ -344,50 +343,18 @@ export function renderPoster(
     )
   }
 
-  // ── 9) Smart text layout (drawn AFTER bg.png so text is readable)
+  // ── 9) Text layout — name + role only (drawn after bg.png) ────
   const textLeftX = width * 0.06
 
-  const badgeOuterRight = boxX + boxWidth + width * 0.042
-  const boxLeftEdge = boxX
-  const rightObstacle = filter.overlay
-    ? Math.min(boxLeftEdge, badgeOuterRight)
-    : boxLeftEdge
-  const textMaxWidth = Math.max(rightObstacle - textLeftX - width * 0.04, width * 0.25)
-
-  // ── 9a) Event title — semibold ─────────────────────────────────
-  let titleY = height * 0.15
-  const titleFontSize = Math.round(width * 0.042)
-  ctx.fillStyle = "#ffffff"
-  ctx.font = `600 ${titleFontSize}px "Geist Mono", monospace`
-  ctx.textAlign = "left"
-
-  const titleLines = wrapText(ctx, speaker.eventTitle.toUpperCase(), textMaxWidth)
-  for (const line of titleLines) {
-    ctx.fillText(line, textLeftX, titleY)
-    titleY += titleFontSize * 1.25
-  }
-
-  // ── 9b) Date text — bold + accent pink ─────────────────────────
-  const dateY = titleY + height * 0.02
-  const dateFontSize = Math.round(width * 0.02)
-  ctx.fillStyle = filter.accentColor
-  ctx.font = `bold ${dateFontSize}px "Geist Mono", monospace`
-  const dateLines = speaker.eventDate.split("\n")
-  let currentDateY = dateY
-  for (const line of dateLines) {
-    ctx.fillText(line.toUpperCase(), textLeftX, currentDateY)
-    currentDateY += dateFontSize * 1.5
-  }
-
-  // ── 9c) Speaker name — WHITE, large ────────────────────────────
+  // Speaker name — WHITE, large, positioned below portrait
   const portraitBottomY = portraitY + portraitH
-  const nameY = portraitBottomY + height * 0.07
+  const nameY = portraitBottomY + height * 0.05
   const nameFontSize = Math.round(width * 0.065)
   ctx.fillStyle = "#ffffff"
   ctx.font = `900 ${nameFontSize}px "Geist", sans-serif`
   ctx.textAlign = "left"
 
-  const nameMaxWidth = width * 0.8
+  const nameMaxWidth = width * 0.88
   const nameWords = speaker.name.toUpperCase().split(" ")
   let currentNameY = nameY
   let currentNameLine = ""
@@ -408,12 +375,12 @@ export function renderPoster(
     currentNameY += nameFontSize * 1.1
   }
 
-  // ── 9d) Speaker role — green, tight gap to name ────────────────
-  const roleY = currentNameY + height * 0.001
+  // Speaker role — green, very tight to name
+  const roleY = currentNameY + height * 0.002
   const roleFontSize = Math.round(width * 0.022)
   ctx.fillStyle = "#4ade80"
   ctx.font = `500 ${roleFontSize}px "Geist", sans-serif`
-  const roleLines = wrapText(ctx, speaker.role.toUpperCase(), width * 0.55)
+  const roleLines = wrapText(ctx, speaker.role.toUpperCase(), width * 0.6)
   for (let i = 0; i < roleLines.length; i++) {
     ctx.fillText(roleLines[i], textLeftX, roleY + i * roleFontSize * 1.4)
   }

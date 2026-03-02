@@ -1,8 +1,6 @@
 export interface SpeakerData {
   name: string
   role: string
-  eventTitle: string
-  eventDate: string
   badgeLabel: string
 }
 

@@ -68,20 +68,6 @@ export function PosterForm({
         />
       </div>
 
-      {/* Event Title */}
-      <div>
-        <label className="block text-xs font-mono uppercase tracking-wider text-[#a0a0a0] mb-2">
-          Event Title
-        </label>
-        <textarea
-          value={speaker.eventTitle}
-          onChange={(e) => update("eventTitle", e.target.value)}
-          rows={3}
-          className="w-full rounded border border-[#333] bg-[#1a1a1a] px-3 py-2 text-sm text-[#f0f0f0] font-mono focus:border-[#E49BC2] focus:outline-none resize-none"
-          placeholder="Mas alla del titulo: construir desde el proposito"
-        />
-      </div>
-
       {/* Name */}
       <div>
         <label className="block text-xs font-mono uppercase tracking-wider text-[#a0a0a0] mb-2">
@@ -110,19 +96,7 @@ export function PosterForm({
         />
       </div>
 
-      {/* Event Date */}
-      <div>
-        <label className="block text-xs font-mono uppercase tracking-wider text-[#a0a0a0] mb-2">
-          Event Date
-        </label>
-        <textarea
-          value={speaker.eventDate}
-          onChange={(e) => update("eventDate", e.target.value)}
-          rows={2}
-          className="w-full rounded border border-[#333] bg-[#1a1a1a] px-3 py-2 text-sm text-[#f0f0f0] font-mono focus:border-[#E49BC2] focus:outline-none resize-none"
-          placeholder={"Jueves 5\nde Marzo\n3 P.M"}
-        />
-      </div>
+
 
 
     </div>

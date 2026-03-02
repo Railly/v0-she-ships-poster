@@ -16,8 +16,6 @@ import type {
 const DEFAULT_SPEAKER: SpeakerData = {
   name: "Larissa Balakdjian",
   role: "GTM @ ElevenLabs | Ex-Salesforce | B2B Strategic Sales",
-  eventTitle: "Mas alla del titulo: construir desde el proposito",
-  eventDate: "Jueves 5\nde Marzo\n3 P.M",
   badgeLabel: "PARTICIPANTE",
 }
 
