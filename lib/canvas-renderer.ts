@@ -42,14 +42,17 @@ function tileGrain(
 }
 
 // ── Helper: cover-fit source coordinates ────────────────────────────
-function getCoverCoords(imgW: number, imgH: number, targetW: number, targetH: number) {
+// `align` controls vertical alignment: "top" keeps the top of the image visible,
+// "center" (default) centers the crop.
+function getCoverCoords(imgW: number, imgH: number, targetW: number, targetH: number, align: "top" | "center" = "center") {
   const imgRatio = imgW / imgH
   const targetRatio = targetW / targetH
   let sx: number, sy: number, sw: number, sh: number
   if (imgRatio > targetRatio) {
     sh = imgH; sw = imgH * targetRatio; sx = (imgW - sw) / 2; sy = 0
   } else {
-    sw = imgW; sh = imgW / targetRatio; sx = 0; sy = (imgH - sh) / 2
+    sw = imgW; sh = imgW / targetRatio; sx = 0
+    sy = align === "top" ? 0 : (imgH - sh) / 2
   }
   return { sx, sy, sw, sh }
 }
@@ -107,39 +110,23 @@ function renderGrayscaleTinted(
   return off
 }
 
-// ── BACKGROUND: adjust source crop to handle offset, always full-bleed
+// ── BACKGROUND: static full-bleed draw, no offset ───────────────────
 function drawBackground(
   ctx: CanvasRenderingContext2D,
   image: HTMLImageElement,
   cover: { sx: number; sy: number; sw: number; sh: number },
   width: number, height: number,
-  filter: FilterSettings,
-  offsetX = 0, offsetY = 0
+  filter: FilterSettings
 ) {
   ctx.fillStyle = "#111111"
   ctx.fillRect(0, 0, width, height)
 
-  // Instead of shifting the destination (which leaves black gaps),
-  // we adjust the SOURCE crop to show more/less of the image.
-  // This keeps the draw at (0,0,width,height) = always full-bleed.
-  const scaleX = cover.sw / width
-  const scaleY = cover.sh / height
-
-  // Shift source crop by the offset (converted to image-space)
-  let sx = cover.sx - offsetX * scaleX
-  let sy = cover.sy - offsetY * scaleY
-  const sw = cover.sw
-  const sh = cover.sh
-
-  // Clamp to image bounds
-  sx = Math.max(0, Math.min(sx, image.width - sw))
-  sy = Math.max(0, Math.min(sy, image.height - sh))
-
+  // Always draw at (0,0) with no offset. BG is static across all templates.
   const sharpOff = document.createElement("canvas")
   sharpOff.width = width
   sharpOff.height = height
   const sc = sharpOff.getContext("2d")!
-  sc.drawImage(image, sx, sy, sw, sh, 0, 0, width, height)
+  sc.drawImage(image, cover.sx, cover.sy, cover.sw, cover.sh, 0, 0, width, height)
 
   ctx.filter = `grayscale(100%) blur(${filter.bgBlur}px) brightness(0.3)`
   ctx.drawImage(sharpOff, 0, 0)
@@ -153,7 +140,8 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
   canvas.width = width
   canvas.height = height
 
-  const cover = getCoverCoords(image.width, image.height, width, height)
+  // Top-aligned cover: always shows the topmost part of the image (e.g., full head)
+  const cover = getCoverCoords(image.width, image.height, width, height, "top")
 
   // Determine crop region
   let cropRegion: FaceBox
@@ -163,59 +151,28 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
   const clamped = clampBox(cropRegion, image.width, image.height)
 
   // ── COMPUTE BOX POSITION ──────────────────────────────────────
-  // Box is positioned independently from BG. BG is always full-bleed
-  // (no offset). Box is clamped to a safe zone.
+  // BG is always static (top-aligned, no offset). Only the box moves.
   const margin = width * 0.06
   const cropAspect = clamped.width / clamped.height
   let boxX: number, boxY: number, boxW: number, boxH: number
 
-  // Offset applied to BOTH bg and box to keep them aligned
-  let bgOffsetX = 0, bgOffsetY = 0
-
   if (filter.overlay) {
-    // Use EXACT natural position + size from imgToCanvas.
+    // Natural position from imgToCanvas -- matches the BG since both
+    // use the same top-aligned cover coords.
     const nat = imgToCanvas(
       clamped.x, clamped.y, clamped.width, clamped.height,
       width, height, cover
     )
     boxX = nat.x; boxY = nat.y; boxW = nat.w; boxH = nat.h
 
-    // Compute maximum offset the BG source crop can actually support.
-    // Beyond this, the source crop hits the image edge and BG stops shifting.
-    const scaleX = cover.sw / width
-    const scaleY = cover.sh / height
-    const maxShiftDown = cover.sy / scaleY          // how far BG can shift down
-    const maxShiftUp = (image.height - cover.sh - cover.sy) / scaleY
-    const maxShiftRight = cover.sx / scaleX          // how far BG can shift right
-    const maxShiftLeft = (image.width - cover.sw - cover.sx) / scaleX
-
-    // Vertical: push box into safe zone, limited by BG headroom
-    const safeTop = height * 0.12
-    if (boxY < safeTop) {
-      const wantedShift = safeTop - boxY
-      bgOffsetY = Math.min(wantedShift, maxShiftDown)
-      boxY += bgOffsetY
-    }
-    if (boxY + boxH > height * 0.55) {
-      const wantedShift = (boxY + boxH) - height * 0.55
-      const limitedShift = Math.min(wantedShift, maxShiftUp)
-      bgOffsetY -= limitedShift
-      boxY -= limitedShift
-    }
-
-    // Horizontal: keep box + badge within canvas
-    const badgeAllowance = width * 0.05
-    if (boxX < margin) {
-      const wantedShift = margin - boxX
-      bgOffsetX = Math.min(wantedShift, maxShiftRight)
-      boxX += bgOffsetX
-    }
-    if (boxX + boxW + badgeAllowance > width - margin) {
-      const wantedShift = (boxX + boxW + badgeAllowance) - (width - margin)
-      const limitedShift = Math.min(wantedShift, maxShiftLeft)
-      bgOffsetX -= limitedShift
-      boxX -= limitedShift
-    }
+    // Only clamp to keep box + badge within canvas bounds.
+    // No BG offset -- the blurred BG is dark enough that slight
+    // edge misalignment from clamping is invisible.
+    const badgeW = width * 0.05
+    boxY = Math.max(height * 0.08, boxY)
+    if (boxY + boxH > height * 0.58) boxY = height * 0.58 - boxH
+    boxX = Math.max(margin, boxX)
+    if (boxX + boxW + badgeW > width - margin) boxX = width - margin - boxW - badgeW
   } else {
     if (template === "half-face") {
       boxH = height * 0.55; boxW = boxH * cropAspect
@@ -229,7 +186,7 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
   }
 
   // ── 1) DRAW BACKGROUND ────────────���─────────────────────────────
-  drawBackground(ctx, image, cover, width, height, filter, bgOffsetX, bgOffsetY)
+  drawBackground(ctx, image, cover, width, height, filter)
   tileGrain(ctx, 0, 0, width, height, filter.bgGrain)
 
   // ── 2) TINTED FACE CROP BOX ────────────────────────────────────
