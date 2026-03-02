@@ -16,18 +16,20 @@ import type {
 const DEFAULT_SPEAKER: SpeakerData = {
   name: "Larissa Balakdjian",
   role: "GTM @ ElevenLabs | Ex-Salesforce | B2B Strategic Sales",
-  badgeLabel: "PARTICIPANTE",
 }
 
 const DEFAULT_FILTER: FilterSettings = {
-  bgBlur: 5,
+  bgBlur: 6,
   bgGrain: 0.14,
   faceGrain: 0.10,
   faceTintHex: "#7e3a60",
   faceTintOpacity: 0.66,
   accentColor: "#e49bc2",
   overlay: true,
-  autoPosition: true,
+  autoPosition: false,
+  panX: 0,
+  panY: 0,
+  zoom: 1.0,
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {

@@ -1,18 +1,20 @@
 export interface SpeakerData {
   name: string
   role: string
-  badgeLabel: string
 }
 
 export interface FilterSettings {
-  bgBlur: number        // 0-40, default 14
-  bgGrain: number       // 0-1, default 0.12
-  faceGrain: number     // 0-1, default 0.15
-  faceTintHex: string   // default "#934370"
-  faceTintOpacity: number // 0-1, default 0.65
-  accentColor: string   // default "#E49BC2"
+  bgBlur: number        // 0-40, default 6
+  bgGrain: number       // 0-1, default 0.14
+  faceGrain: number     // 0-1, default 0.10
+  faceTintHex: string   // default "#7e3a60"
+  faceTintOpacity: number // 0-1, default 0.66
+  accentColor: string   // default "#e49bc2"
   overlay: boolean      // whether to position crop at real face location
   autoPosition: boolean // nudge box to avoid logo/badge clipping
+  panX: number          // -100 to 100, horizontal image shift (%)
+  panY: number          // -100 to 100, vertical image shift (%)
+  zoom: number          // 0.5 to 2.0, image zoom level
 }
 
 export interface FaceBox {

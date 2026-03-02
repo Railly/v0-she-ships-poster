@@ -1,6 +1,6 @@
 "use client"
 
-import { Download, Eye, ScanFace, Smile, Loader2 } from "lucide-react"
+import { Download, Loader2, TriangleAlert, Move, ZoomIn, RotateCcw } from "lucide-react"
 import type { TemplateType, FilterSettings } from "@/lib/types"
 
 interface PosterControlsProps {
@@ -17,8 +17,6 @@ const labelClass =
   "block text-xs font-mono uppercase tracking-wider text-[#a0a0a0] mb-1.5"
 const sliderClass =
   "w-full h-1.5 rounded-full appearance-none cursor-pointer bg-[#333] accent-[#E49BC2]"
-const hexInputClass =
-  "w-full rounded border border-[#333] bg-[#1a1a1a] px-3 py-1.5 text-xs text-[#f0f0f0] font-mono focus:border-[#E49BC2] focus:outline-none"
 
 export function PosterControls({
   template,
@@ -33,6 +31,10 @@ export function PosterControls({
     onFilterChange({ ...filter, [key]: value })
   }
 
+  const resetPosition = () => {
+    onFilterChange({ ...filter, panX: 0, panY: 0, zoom: 1.0 })
+  }
+
   return (
     <div className="flex flex-col gap-5">
       {/* Template selector */}
@@ -41,46 +43,24 @@ export function PosterControls({
       </h2>
 
       <div className="grid grid-cols-3 gap-2">
-        <button
-          type="button"
-          onClick={() => onTemplateChange("half-face")}
-          className={`flex flex-col items-center gap-2 rounded border px-3 py-3 text-[10px] font-mono uppercase tracking-wider transition-colors cursor-pointer ${
-            template === "half-face"
-              ? "border-[#E49BC2] bg-[#E49BC2]/10 text-[#E49BC2]"
-              : "border-[#333] bg-[#1a1a1a] text-[#a0a0a0] hover:border-[#555]"
-          }`}
-        >
-          <ScanFace className="h-5 w-5" />
-          Half Face
-        </button>
-        <button
-          type="button"
-          onClick={() => onTemplateChange("eyes")}
-          className={`flex flex-col items-center gap-2 rounded border px-3 py-3 text-[10px] font-mono uppercase tracking-wider transition-colors cursor-pointer ${
-            template === "eyes"
-              ? "border-[#E49BC2] bg-[#E49BC2]/10 text-[#E49BC2]"
-              : "border-[#333] bg-[#1a1a1a] text-[#a0a0a0] hover:border-[#555]"
-          }`}
-        >
-          <Eye className="h-5 w-5" />
-          Eyes Only
-        </button>
-        <button
-          type="button"
-          onClick={() => onTemplateChange("smile")}
-          className={`flex flex-col items-center gap-2 rounded border px-3 py-3 text-[10px] font-mono uppercase tracking-wider transition-colors cursor-pointer ${
-            template === "smile"
-              ? "border-[#E49BC2] bg-[#E49BC2]/10 text-[#E49BC2]"
-              : "border-[#333] bg-[#1a1a1a] text-[#a0a0a0] hover:border-[#555]"
-          }`}
-        >
-          <Smile className="h-5 w-5" />
-          Smile
-        </button>
+        {(["half-face", "eyes", "smile"] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => onTemplateChange(t)}
+            className={`flex flex-col items-center gap-2 rounded border px-3 py-3 text-[10px] font-mono uppercase tracking-wider transition-colors cursor-pointer ${
+              template === t
+                ? "border-[#E49BC2] bg-[#E49BC2]/10 text-[#E49BC2]"
+                : "border-[#333] bg-[#1a1a1a] text-[#a0a0a0] hover:border-[#555]"
+            }`}
+          >
+            {t === "half-face" ? "Half Face" : t === "eyes" ? "Eyes Only" : "Smile"}
+          </button>
+        ))}
       </div>
 
-      {/* Overlay toggle */}
-      <div className="flex items-center justify-between rounded border border-[#333] bg-[#1a1a1a] px-4 py-3">
+      {/* Overlay Mode - commented out as requested */}
+      {/* <div className="flex items-center justify-between rounded border border-[#333] bg-[#1a1a1a] px-4 py-3">
         <div>
           <span className="text-xs font-mono uppercase tracking-wider text-[#a0a0a0]">
             Overlay Mode
@@ -103,18 +83,15 @@ export function PosterControls({
           />
           <span className="sr-only">Toggle overlay mode</span>
         </button>
-      </div>
+      </div> */}
 
       {/* Auto-position toggle */}
-      {filter.overlay && (
-        <div className="flex items-center justify-between rounded border border-[#333] bg-[#1a1a1a] px-4 py-3">
+      <div className="flex flex-col gap-2 rounded border border-[#333] bg-[#1a1a1a] px-4 py-3">
+        <div className="flex items-center justify-between">
           <div>
             <span className="text-xs font-mono uppercase tracking-wider text-[#a0a0a0]">
               Auto Position
             </span>
-            <p className="text-[10px] font-mono text-[#555] mt-0.5">
-              Avoid logo collision & edge clipping
-            </p>
           </div>
           <button
             type="button"
@@ -131,7 +108,81 @@ export function PosterControls({
             <span className="sr-only">Toggle auto position</span>
           </button>
         </div>
-      )}
+        <p className="text-[10px] font-mono text-[#666] leading-relaxed">
+          If the face crop looks cut off or overlaps the logo, turn this on
+          to automatically reposition it within safe bounds.
+        </p>
+      </div>
+
+      {/* Image Position & Zoom */}
+      <h2 className="text-sm font-mono uppercase tracking-widest text-[#E49BC2] mt-2 flex items-center gap-2">
+        <Move className="h-3.5 w-3.5" />
+        Position & Zoom
+      </h2>
+
+      {/* Pan X */}
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className={labelClass}>Horizontal</label>
+          <span className="text-xs font-mono text-[#666]">{filter.panX > 0 ? "+" : ""}{filter.panX}</span>
+        </div>
+        <input
+          type="range"
+          min={-100}
+          max={100}
+          step={1}
+          value={filter.panX}
+          onChange={(e) => updateFilter("panX", Number(e.target.value))}
+          className={sliderClass}
+        />
+      </div>
+
+      {/* Pan Y */}
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className={labelClass}>Vertical</label>
+          <span className="text-xs font-mono text-[#666]">{filter.panY > 0 ? "+" : ""}{filter.panY}</span>
+        </div>
+        <input
+          type="range"
+          min={-100}
+          max={100}
+          step={1}
+          value={filter.panY}
+          onChange={(e) => updateFilter("panY", Number(e.target.value))}
+          className={sliderClass}
+        />
+      </div>
+
+      {/* Zoom */}
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className={labelClass}>
+            <ZoomIn className="inline h-3 w-3 mr-1 -translate-y-px" />
+            Zoom
+          </label>
+          <span className="text-xs font-mono text-[#666]">{filter.zoom.toFixed(2)}x</span>
+        </div>
+        <input
+          type="range"
+          min={50}
+          max={200}
+          step={1}
+          value={Math.round(filter.zoom * 100)}
+          onChange={(e) => updateFilter("zoom", Number(e.target.value) / 100)}
+          className={sliderClass}
+        />
+      </div>
+
+      {/* Reset position button */}
+      <button
+        type="button"
+        onClick={resetPosition}
+        className="flex items-center justify-center gap-2 rounded border border-[#333] bg-[#1a1a1a] px-3 py-2 text-[10px] font-mono uppercase tracking-wider text-[#a0a0a0] transition-colors hover:border-[#555] hover:text-[#f0f0f0] cursor-pointer"
+      >
+        <RotateCcw className="h-3 w-3" />
+        Reset Position
+      </button>
 
       {/* Processing indicator */}
       {isProcessing && (
@@ -141,12 +192,12 @@ export function PosterControls({
         </div>
       )}
 
-      {/* ── Filter Controls ──────────────────────────────────────── */}
+      {/* ── Filter Controls (commented out, not deleted) ─────────── */}
+      {/*
       <h2 className="text-sm font-mono uppercase tracking-widest text-[#E49BC2] mt-2">
         Filters
       </h2>
 
-      {/* Background Blur */}
       <div>
         <div className="flex items-center justify-between mb-1.5">
           <label className={labelClass}>BG Blur</label>
@@ -163,7 +214,6 @@ export function PosterControls({
         />
       </div>
 
-      {/* Background Grain */}
       <div>
         <div className="flex items-center justify-between mb-1.5">
           <label className={labelClass}>BG Grain</label>
@@ -182,7 +232,6 @@ export function PosterControls({
         />
       </div>
 
-      {/* Face Grain */}
       <div>
         <div className="flex items-center justify-between mb-1.5">
           <label className={labelClass}>Face Grain</label>
@@ -203,7 +252,6 @@ export function PosterControls({
         />
       </div>
 
-      {/* Face Tint Hex */}
       <div>
         <label className={labelClass}>Face Tint Color</label>
         <div className="flex gap-2 items-center">
@@ -217,13 +265,12 @@ export function PosterControls({
             type="text"
             value={filter.faceTintHex}
             onChange={(e) => updateFilter("faceTintHex", e.target.value)}
-            className={hexInputClass}
+            className="w-full rounded border border-[#333] bg-[#1a1a1a] px-3 py-1.5 text-xs text-[#f0f0f0] font-mono focus:border-[#E49BC2] focus:outline-none"
             placeholder="#934370"
           />
         </div>
       </div>
 
-      {/* Face Tint Opacity */}
       <div>
         <div className="flex items-center justify-between mb-1.5">
           <label className={labelClass}>Tint Opacity</label>
@@ -244,7 +291,6 @@ export function PosterControls({
         />
       </div>
 
-      {/* Accent Color */}
       <div>
         <label className={labelClass}>Accent Color</label>
         <div className="flex gap-2 items-center">
@@ -258,10 +304,21 @@ export function PosterControls({
             type="text"
             value={filter.accentColor}
             onChange={(e) => updateFilter("accentColor", e.target.value)}
-            className={hexInputClass}
+            className="w-full rounded border border-[#333] bg-[#1a1a1a] px-3 py-1.5 text-xs text-[#f0f0f0] font-mono focus:border-[#E49BC2] focus:outline-none"
             placeholder="#E49BC2"
           />
         </div>
+      </div>
+      */}
+
+      {/* Safari / iOS warning */}
+      <div className="flex items-start gap-2.5 rounded border border-[#3a3020] bg-[#1a1a1a] px-4 py-3">
+        <TriangleAlert className="h-4 w-4 text-[#f0c040] shrink-0 mt-0.5" />
+        <p className="text-[10px] font-mono text-[#888] leading-relaxed">
+          <span className="text-[#c0a040]">Heads up --</span> some effects
+          like the B&W filter may render differently on Safari and iOS.
+          For the best results, use Chrome or Firefox on desktop.
+        </p>
       </div>
 
       {/* Export button */}

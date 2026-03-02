@@ -305,7 +305,30 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
   canvas.height = height
 
   // Top-aligned cover: always shows the topmost part of the image (e.g., full head)
-  const cover = getCoverCoords(image.width, image.height, width, height, "top")
+  const baseCover = getCoverCoords(image.width, image.height, width, height, "top")
+
+  // Apply zoom: shrink the source window (= zoom in) or expand it (= zoom out)
+  const zoom = Math.max(0.5, Math.min(filter.zoom, 2.0))
+  const zoomedSw = baseCover.sw / zoom
+  const zoomedSh = baseCover.sh / zoom
+
+  // Apply pan: shift the source window. panX/panY are -100..100
+  // representing % of the available slack in each direction
+  const slackX = image.width - zoomedSw
+  const slackY = image.height - zoomedSh
+  const centerSx = baseCover.sx + (baseCover.sw - zoomedSw) / 2
+  const centerSy = baseCover.sy + (baseCover.sh - zoomedSh) / 2
+  const panOffsetX = (filter.panX / 100) * (slackX / 2)
+  const panOffsetY = (filter.panY / 100) * (slackY / 2)
+  const rawSx = centerSx + panOffsetX
+  const rawSy = centerSy + panOffsetY
+
+  const cover = {
+    sx: Math.max(0, Math.min(rawSx, image.width - zoomedSw)),
+    sy: Math.max(0, Math.min(rawSy, image.height - zoomedSh)),
+    sw: zoomedSw,
+    sh: zoomedSh,
+  }
 
   // Determine crop region
   let cropRegion: FaceBox
@@ -402,7 +425,7 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
 
   // ── 3) BADGE ──────────────────────────────────────────────────
   {
-    const badgeText = speaker.badgeLabel.toUpperCase()
+    const badgeText = "PARTICIPANTE"
     const badgeFontSize = Math.round(width * 0.016)
     ctx.font = `bold ${badgeFontSize}px "Geist", sans-serif`
     const textW = ctx.measureText(badgeText).width

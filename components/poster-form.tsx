@@ -54,20 +54,6 @@ export function PosterForm({
         />
       </div>
 
-      {/* Badge Label */}
-      <div>
-        <label className="block text-xs font-mono uppercase tracking-wider text-[#a0a0a0] mb-2">
-          Badge Label
-        </label>
-        <input
-          type="text"
-          value={speaker.badgeLabel}
-          onChange={(e) => update("badgeLabel", e.target.value)}
-          className="w-full rounded border border-[#333] bg-[#1a1a1a] px-3 py-2 text-sm text-[#f0f0f0] font-mono focus:border-[#E49BC2] focus:outline-none"
-          placeholder="PARTICIPANTE"
-        />
-      </div>
-
       {/* Name */}
       <div>
         <label className="block text-xs font-mono uppercase tracking-wider text-[#a0a0a0] mb-2">
