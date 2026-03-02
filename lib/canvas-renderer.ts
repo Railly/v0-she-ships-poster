@@ -160,24 +160,23 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
   let boxX: number, boxY: number, boxW: number, boxH: number
 
   if (filter.overlay) {
+    // Natural position from imgToCanvas -- this ALWAYS matches the BG
+    // because both use the same cover coords. Do NOT clamp position,
+    // only cap size. This guarantees perfect alignment.
     const nat = imgToCanvas(
       clamped.x, clamped.y, clamped.width, clamped.height,
       width, height, cover
     )
-    boxW = nat.w; boxH = nat.h; boxX = nat.x; boxY = nat.y
+    boxX = nat.x; boxY = nat.y; boxW = nat.w; boxH = nat.h
 
     if (template === "half-face") {
-      if (boxW > width * 0.35) { boxH *= (width * 0.35) / boxW; boxW = width * 0.35 }
-      if (boxH > height * 0.55) { boxW *= (height * 0.55) / boxH; boxH = height * 0.55 }
-      // Clamp to right side, within safe zone
-      boxX = Math.max(width * 0.50, Math.min(boxX, width - boxW - margin))
-      boxY = Math.max(height * 0.08, Math.min(boxY, height * 0.52 - boxH))
+      const maxW = width * 0.35, maxH = height * 0.55
+      if (boxW > maxW) { const s = maxW / boxW; boxW *= s; boxH *= s }
+      if (boxH > maxH) { const s = maxH / boxH; boxW *= s; boxH *= s }
     } else {
-      if (boxW > width * 0.62) { boxH *= (width * 0.62) / boxW; boxW = width * 0.62 }
-      if (boxH > height * 0.26) { boxW *= (height * 0.26) / boxH; boxH = height * 0.26 }
-      // For eyes/smile: position lower (vertically centered in top half)
-      boxX = Math.max(margin, Math.min(boxX, width - boxW - margin))
-      boxY = Math.max(height * 0.22, Math.min(boxY, height * 0.52 - boxH))
+      const maxW = width * 0.65, maxH = height * 0.28
+      if (boxW > maxW) { const s = maxW / boxW; boxW *= s; boxH *= s }
+      if (boxH > maxH) { const s = maxH / boxH; boxW *= s; boxH *= s }
     }
   } else {
     if (template === "half-face") {
@@ -279,14 +278,15 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
   if (imgAspect > 1) { pW = pScale; pH = pScale / imgAspect }
   else { pH = pScale; pW = pScale * imgAspect }
 
-  // Layout from bottom: role -> name gap -> name -> portrait gap -> portrait
+  // Layout from bottom: role -> gap -> name -> big gap -> portrait
   const bottomEdge = height * 0.93
   const roleStartY = bottomEdge - roleBlockH
-  const nameRoleGap = nameFontSize * 0.5 // breathing room between name and role
+  const nameRoleGap = nameFontSize * 0.6
   const nameBottomY = roleStartY - nameRoleGap
-  const nameTopY = nameBottomY - nameBlockH + nameFontSize // first line baseline
-  const portraitBottomY = nameTopY - nameFontSize * 0.4 // gap between portrait bottom and name top
-  const pY = portraitBottomY - pH
+  const nameTopY = nameBottomY - nameBlockH + nameFontSize
+  // Portrait sits well above the name with generous spacing
+  const portraitGap = nameFontSize * 1.2
+  const pY = nameTopY - nameFontSize - portraitGap - pH
   const pX = margin
 
   // Draw portrait
