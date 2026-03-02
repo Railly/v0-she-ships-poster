@@ -153,7 +153,7 @@ export function renderPoster(
   canvas.width = width
   canvas.height = height
 
-  // Initial cover-fit (may be adjusted for overlay alignment)
+  // Cover-fit coordinates (fixed, never mutated)
   const cover = getCoverCoords(image.width, image.height, width, height)
 
   // ── 3) Determine crop region based on template ─────────────────
@@ -171,55 +171,41 @@ export function renderPoster(
   const boxMargin = width * 0.04
   const boxMaxWidth = width * 0.48
   const boxMaxHeight = height * 0.45
-  // Reserve enough top space for the badge + SS logo area in bg.png
-  const minTopMargin = height * 0.13
-  const minBottomMargin = height * 0.36
+  const safeTop = height * 0.13
+  const safeBottom = height * 0.62 // top of "bottom zone" (portrait+name)
 
   let boxX: number, boxY: number, boxWidth: number, boxHeight: number
+  // Canvas-space offset applied to BOTH the background and overlay box
+  // to shift the entire scene so the face region lands in the safe zone
+  let bgOffsetY = 0
+  let bgOffsetX = 0
 
   if (filter.overlay) {
-    // Map face crop to its natural position in the poster
-    const initial = imgToCanvas(
+    // Map face crop to its natural position (no offset yet)
+    const natural = imgToCanvas(
       clamped.x, clamped.y, clamped.width, clamped.height,
       width, height, cover
     )
 
-    // Calculate how much to shift the cover so the box lands in the safe zone
-    const safeTop = minTopMargin
-    const safeBottom = height - minBottomMargin
-    const scaleY = cover.sh / height
-
-    let targetBoxY = initial.y
-
-    if (targetBoxY < safeTop) {
-      // Face region is above safe zone -- shift cover source DOWN
-      const shift = (safeTop - targetBoxY) * scaleY
-      cover.sy = Math.min(cover.sy + shift, image.height - cover.sh)
-    } else if (targetBoxY + initial.h > safeBottom) {
-      // Face region is below safe zone -- shift cover source UP
-      const shift = ((targetBoxY + initial.h) - safeBottom) * scaleY
-      cover.sy = Math.max(0, cover.sy - shift)
+    // Calculate canvas-space shift needed to bring box into safe zone
+    if (natural.y < safeTop) {
+      bgOffsetY = safeTop - natural.y
+    } else if (natural.y + natural.h > safeBottom) {
+      bgOffsetY = safeBottom - (natural.y + natural.h)
     }
 
-    // Also handle horizontal: shift cover.sx if box overflows left/right
-    const scaleX = cover.sw / width
-    if (initial.x < boxMargin) {
-      const shift = (boxMargin - initial.x) * scaleX
-      cover.sx = Math.min(cover.sx + shift, image.width - cover.sw)
-    } else if (initial.x + initial.w > width - boxMargin) {
-      const shift = ((initial.x + initial.w) - (width - boxMargin)) * scaleX
-      cover.sx = Math.max(0, cover.sx - shift)
+    // Horizontal shift
+    if (natural.x < boxMargin) {
+      bgOffsetX = boxMargin - natural.x
+    } else if (natural.x + natural.w > width - boxMargin) {
+      bgOffsetX = (width - boxMargin) - (natural.x + natural.w)
     }
 
-    // Re-map with adjusted cover -- BG and box now use same transform
-    const mapped = imgToCanvas(
-      clamped.x, clamped.y, clamped.width, clamped.height,
-      width, height, cover
-    )
-    boxX = mapped.x
-    boxY = mapped.y
-    boxWidth = mapped.w
-    boxHeight = mapped.h
+    // Apply offset to get final box position
+    boxX = natural.x + bgOffsetX
+    boxY = natural.y + bgOffsetY
+    boxWidth = natural.w
+    boxHeight = natural.h
   } else {
     // Standard positioning: crop box on the right side
     const cropAspect = clamped.width / clamped.height
@@ -231,39 +217,47 @@ export function renderPoster(
       boxWidth = boxMaxHeight * cropAspect
     }
     boxX = width - boxWidth - boxMargin
-    boxY = minTopMargin
+    boxY = safeTop
   }
 
   // ── 1) Dark base fill ───────────────────────────────────────────
   ctx.fillStyle = "#111111"
   ctx.fillRect(0, 0, width, height)
 
-  // ── 2) Speaker image as blurred B&W background, full bleed
-  // Uses the (possibly adjusted) cover coords so BG aligns with overlay box
+  // ── 2) Speaker image as blurred B&W background
+  // Draw with the SAME offset as the overlay box so they stay aligned
   {
+    // Draw sharp image at cover-fit position + offset onto a large canvas
+    // (larger to avoid blur clipping at edges)
+    const pad = Math.max(filter.bgBlur * 3, 40)
+    const bigW = width + pad * 2
+    const bigH = height + pad * 2
+
     const sharpOff = document.createElement("canvas")
-    sharpOff.width = width
-    sharpOff.height = height
+    sharpOff.width = bigW
+    sharpOff.height = bigH
     const sharpCtx = sharpOff.getContext("2d")!
     sharpCtx.fillStyle = "#111111"
-    sharpCtx.fillRect(0, 0, width, height)
+    sharpCtx.fillRect(0, 0, bigW, bigH)
+    // Draw at pad + offset so the face lines up when we crop back
     sharpCtx.drawImage(
       image,
       cover.sx, cover.sy, cover.sw, cover.sh,
-      0, 0, width, height
+      pad + bgOffsetX, pad + bgOffsetY, width, height
     )
 
-    const pad = filter.bgBlur * 3
+    // Apply blur + grayscale
     const blurOff = document.createElement("canvas")
-    blurOff.width = width + pad * 2
-    blurOff.height = height + pad * 2
+    blurOff.width = bigW
+    blurOff.height = bigH
     const blurCtx = blurOff.getContext("2d")!
     blurCtx.fillStyle = "#111111"
-    blurCtx.fillRect(0, 0, blurOff.width, blurOff.height)
+    blurCtx.fillRect(0, 0, bigW, bigH)
     blurCtx.filter = `grayscale(100%) blur(${filter.bgBlur}px) brightness(0.3)`
-    blurCtx.drawImage(sharpOff, pad, pad)
+    blurCtx.drawImage(sharpOff, 0, 0)
     blurCtx.filter = "none"
 
+    // Crop the center (poster-sized area) back onto the main canvas
     ctx.drawImage(
       blurOff,
       pad, pad, width, height,
