@@ -165,14 +165,10 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
     )
     boxX = nat.x; boxY = nat.y; boxW = nat.w; boxH = nat.h
 
-    // Only clamp to keep box + badge within canvas bounds.
-    // No BG offset -- the blurred BG is dark enough that slight
-    // edge misalignment from clamping is invisible.
-    const badgeW = width * 0.05
-    boxY = Math.max(height * 0.08, boxY)
-    if (boxY + boxH > height * 0.58) boxY = height * 0.58 - boxH
-    boxX = Math.max(margin, boxX)
-    if (boxX + boxW + badgeW > width - margin) boxX = width - margin - boxW - badgeW
+    // NO clamping in overlay mode. The box position MUST match the
+    // BG exactly. If the box extends beyond the canvas edges, the
+    // canvas clips it naturally -- the visible portion still aligns
+    // perfectly with the BG face behind it.
   } else {
     if (template === "half-face") {
       boxH = height * 0.55; boxW = boxH * cropAspect
