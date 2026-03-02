@@ -225,36 +225,20 @@ export function renderPoster(
   ctx.fillRect(0, 0, width, height)
 
   // ── 2) Speaker image as blurred B&W background
-  // The face must align with the overlay box (bgOffsetX/Y shifts both).
-  // To avoid black gaps caused by the offset, we expand the source crop
-  // region in image-space to cover the extra area, then draw at (0,0).
+  // Draw at cover-fit + bgOffset. To avoid black gaps, we scale the
+  // image up slightly (1.3x) and center the extra around the offset
+  // draw position so edges are always filled with image pixels.
   {
     const pad = Math.max(filter.bgBlur * 3, 40)
     const bigW = width + pad * 2
     const bigH = height + pad * 2
 
-    // Convert canvas-space offset to image-space expansion
-    const scaleX = cover.sw / width
-    const scaleY = cover.sh / height
-
-    // Expand source rect: if offset is positive (image pushed down),
-    // we need more source pixels ABOVE (lower sy) to fill the top gap
-    let exSx = cover.sx - Math.max(0, bgOffsetX) * scaleX
-    let exSy = cover.sy - Math.max(0, bgOffsetY) * scaleY
-    let exSw = cover.sw + Math.abs(bgOffsetX) * scaleX
-    let exSh = cover.sh + Math.abs(bgOffsetY) * scaleY
-
-    // Clamp to image bounds
-    if (exSx < 0) { exSw += exSx; exSx = 0 }
-    if (exSy < 0) { exSh += exSy; exSy = 0 }
-    exSw = Math.min(exSw, image.width - exSx)
-    exSh = Math.min(exSh, image.height - exSy)
-
-    // Destination: the expanded area maps to poster + the offset gap
-    const dstW = exSw / scaleX
-    const dstH = exSh / scaleY
-    const dstX = (exSx - cover.sx) / scaleX + bgOffsetX
-    const dstY = (exSy - cover.sy) / scaleY + bgOffsetY
+    const overscale = 1.3
+    const scaledW = width * overscale
+    const scaledH = height * overscale
+    // Center the overscaled image so there's extra on all sides
+    const baseX = (width - scaledW) / 2 + bgOffsetX
+    const baseY = (height - scaledH) / 2 + bgOffsetY
 
     const sharpOff = document.createElement("canvas")
     sharpOff.width = bigW
@@ -264,8 +248,8 @@ export function renderPoster(
     sharpCtx.fillRect(0, 0, bigW, bigH)
     sharpCtx.drawImage(
       image,
-      exSx, exSy, exSw, exSh,
-      pad + dstX, pad + dstY, dstW, dstH
+      cover.sx, cover.sy, cover.sw, cover.sh,
+      pad + baseX, pad + baseY, scaledW, scaledH
     )
 
     // Apply blur + grayscale
@@ -279,7 +263,6 @@ export function renderPoster(
     blurCtx.drawImage(sharpOff, 0, 0)
     blurCtx.filter = "none"
 
-    // Crop poster-sized area back
     ctx.drawImage(
       blurOff,
       pad, pad, width, height,
@@ -343,24 +326,23 @@ export function renderPoster(
     ctx.restore()
   }
 
-  // ── 7) Small portrait — same grayscale + tint filter ───────────
-  const portraitMaxW = width * 0.17
-  const portraitMaxH = height * 0.16
+  // ── 7) Small portrait — same row as detected box, on its LEFT ──
+  // Size the portrait to fit in the space left of the box
+  const portraitMaxW = Math.min(width * 0.15, boxX - width * 0.12)
+  const portraitMaxH = Math.min(height * 0.15, boxHeight * 0.7)
   const imgAspect = image.width / image.height
   let portraitW: number, portraitH: number
   if (imgAspect > portraitMaxW / portraitMaxH) {
-    portraitW = portraitMaxW
-    portraitH = portraitMaxW / imgAspect
+    portraitW = Math.max(portraitMaxW, 80)
+    portraitH = portraitW / imgAspect
   } else {
-    portraitH = portraitMaxH
-    portraitW = portraitMaxH * imgAspect
+    portraitH = Math.max(portraitMaxH, 80)
+    portraitW = portraitH * imgAspect
   }
 
-  // Position portrait: always below the crop box with a gap
+  // Place portrait to the left of the box, vertically aligned to box bottom
   const portraitX = width * 0.06
-  const portraitY = filter.overlay
-    ? Math.max(boxY + boxHeight + height * 0.03, height * 0.40)
-    : height * 0.36
+  const portraitY = boxY + boxHeight - portraitH
 
   {
     const tintedPortrait = renderGrayscaleTinted(
@@ -405,12 +387,12 @@ export function renderPoster(
     )
   }
 
-  // ── 9) Text layout — name + role only (drawn after bg.png) ────
+  // ── 9) Text layout — name + role below the box ─────────────────
   const textLeftX = width * 0.06
 
-  // Speaker name — WHITE, large, big gap from portrait
-  const portraitBottomY = portraitY + portraitH
-  const nameY = portraitBottomY + height * 0.10
+  // Speaker name — WHITE, large, right below box with gap
+  const boxBottom = boxY + boxHeight
+  const nameY = boxBottom + height * 0.06
   const nameFontSize = Math.round(width * 0.075)
   ctx.fillStyle = "#ffffff"
   ctx.font = `900 ${nameFontSize}px "Geist", sans-serif`
