@@ -107,7 +107,7 @@ function renderGrayscaleTinted(
   return off
 }
 
-// ── BACKGROUND: single draw with optional offset ────────────────────
+// ── BACKGROUND: adjust source crop to handle offset, always full-bleed
 function drawBackground(
   ctx: CanvasRenderingContext2D,
   image: HTMLImageElement,
@@ -119,19 +119,27 @@ function drawBackground(
   ctx.fillStyle = "#111111"
   ctx.fillRect(0, 0, width, height)
 
-  // Single draw at optional offset. The heavy blur naturally spreads
-  // image pixels into any small edge gap from the offset.
+  // Instead of shifting the destination (which leaves black gaps),
+  // we adjust the SOURCE crop to show more/less of the image.
+  // This keeps the draw at (0,0,width,height) = always full-bleed.
+  const scaleX = cover.sw / width
+  const scaleY = cover.sh / height
+
+  // Shift source crop by the offset (converted to image-space)
+  let sx = cover.sx - offsetX * scaleX
+  let sy = cover.sy - offsetY * scaleY
+  const sw = cover.sw
+  const sh = cover.sh
+
+  // Clamp to image bounds
+  sx = Math.max(0, Math.min(sx, image.width - sw))
+  sy = Math.max(0, Math.min(sy, image.height - sh))
+
   const sharpOff = document.createElement("canvas")
   sharpOff.width = width
   sharpOff.height = height
   const sc = sharpOff.getContext("2d")!
-  sc.fillStyle = "#111111"
-  sc.fillRect(0, 0, width, height)
-  sc.drawImage(
-    image,
-    cover.sx, cover.sy, cover.sw, cover.sh,
-    offsetX, offsetY, width, height
-  )
+  sc.drawImage(image, sx, sy, sw, sh, 0, 0, width, height)
 
   ctx.filter = `grayscale(100%) blur(${filter.bgBlur}px) brightness(0.3)`
   ctx.drawImage(sharpOff, 0, 0)
@@ -209,7 +217,7 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
     }
   }
 
-  // ── 1) DRAW BACKGROUND ──────────────────────────────────────────
+  // ── 1) DRAW BACKGROUND ────────────���─────────────────────────────
   drawBackground(ctx, image, cover, width, height, filter, bgOffsetX, bgOffsetY)
   tileGrain(ctx, 0, 0, width, height, filter.bgGrain)
 
