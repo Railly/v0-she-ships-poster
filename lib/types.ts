@@ -12,6 +12,7 @@ export interface FilterSettings {
   faceTintOpacity: number // 0-1, default 0.65
   accentColor: string   // default "#E49BC2"
   overlay: boolean      // whether to position crop at real face location
+  autoPosition: boolean // nudge box to avoid logo/badge clipping
 }
 
 export interface FaceBox {

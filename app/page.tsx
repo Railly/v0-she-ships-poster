@@ -27,6 +27,7 @@ const DEFAULT_FILTER: FilterSettings = {
   faceTintOpacity: 0.66,
   accentColor: "#e49bc2",
   overlay: true,
+  autoPosition: false,
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {

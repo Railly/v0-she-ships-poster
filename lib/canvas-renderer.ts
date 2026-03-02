@@ -165,10 +165,31 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
     )
     boxX = nat.x; boxY = nat.y; boxW = nat.w; boxH = nat.h
 
-    // NO clamping in overlay mode. The box position MUST match the
-    // BG exactly. If the box extends beyond the canvas edges, the
-    // canvas clips it naturally -- the visible portion still aligns
-    // perfectly with the BG face behind it.
+    // When autoPosition is ON, nudge the box so it doesn't collide
+    // with the logo zone at the top or get clipped by canvas edges.
+    // The BG stays static -- only the box moves. The blur makes any
+    // slight edge misalignment at the box border invisible.
+    if (filter.autoPosition) {
+      const logoZoneBottom = height * 0.12 // logo occupies ~top 12%
+      const badgeW = width * 0.05
+
+      // Push box below logo zone
+      if (boxY < logoZoneBottom) {
+        boxY = logoZoneBottom
+      }
+      // Keep box + badge within right edge
+      if (boxX + boxW + badgeW > width - margin) {
+        boxX = width - margin - boxW - badgeW
+      }
+      // Keep box within left edge
+      if (boxX < margin) {
+        boxX = margin
+      }
+      // Keep box from going below the text area (~58%)
+      if (boxY + boxH > height * 0.58) {
+        boxY = height * 0.58 - boxH
+      }
+    }
   } else {
     if (template === "half-face") {
       boxH = height * 0.55; boxW = boxH * cropAspect

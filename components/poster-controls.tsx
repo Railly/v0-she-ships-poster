@@ -105,6 +105,34 @@ export function PosterControls({
         </button>
       </div>
 
+      {/* Auto-position toggle */}
+      {filter.overlay && (
+        <div className="flex items-center justify-between rounded border border-[#333] bg-[#1a1a1a] px-4 py-3">
+          <div>
+            <span className="text-xs font-mono uppercase tracking-wider text-[#a0a0a0]">
+              Auto Position
+            </span>
+            <p className="text-[10px] font-mono text-[#555] mt-0.5">
+              Avoid logo collision & edge clipping
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => updateFilter("autoPosition", !filter.autoPosition)}
+            className={`relative w-10 h-5 rounded-full transition-colors cursor-pointer ${
+              filter.autoPosition ? "bg-[#E49BC2]" : "bg-[#333]"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-[#f0f0f0] transition-transform ${
+                filter.autoPosition ? "translate-x-5" : "translate-x-0"
+              }`}
+            />
+            <span className="sr-only">Toggle auto position</span>
+          </button>
+        </div>
+      )}
+
       {/* Processing indicator */}
       {isProcessing && (
         <div className="flex items-center gap-2 text-xs font-mono text-[#4ade80]">
