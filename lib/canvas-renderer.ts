@@ -174,39 +174,47 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
 
   if (filter.overlay) {
     // Use EXACT natural position + size from imgToCanvas.
-    // Both the BG and the box use the same cover coords, so this
-    // guarantees pixel-perfect alignment.
     const nat = imgToCanvas(
       clamped.x, clamped.y, clamped.width, clamped.height,
       width, height, cover
     )
     boxX = nat.x; boxY = nat.y; boxW = nat.w; boxH = nat.h
 
-    // If the box extends above or past canvas edges, shift BOTH
-    // the box and BG by the same amount to keep alignment.
-    // Use a generous top margin so the image's top is visible above the box.
+    // Compute maximum offset the BG source crop can actually support.
+    // Beyond this, the source crop hits the image edge and BG stops shifting.
+    const scaleX = cover.sw / width
+    const scaleY = cover.sh / height
+    const maxShiftDown = cover.sy / scaleY          // how far BG can shift down
+    const maxShiftUp = (image.height - cover.sh - cover.sy) / scaleY
+    const maxShiftRight = cover.sx / scaleX          // how far BG can shift right
+    const maxShiftLeft = (image.width - cover.sw - cover.sx) / scaleX
+
+    // Vertical: push box into safe zone, limited by BG headroom
     const safeTop = height * 0.12
     if (boxY < safeTop) {
-      bgOffsetY = safeTop - boxY
-      boxY = safeTop
+      const wantedShift = safeTop - boxY
+      bgOffsetY = Math.min(wantedShift, maxShiftDown)
+      boxY += bgOffsetY
     }
-    // Ensure box doesn't go below 55% of canvas
     if (boxY + boxH > height * 0.55) {
-      const shift = (boxY + boxH) - height * 0.55
-      bgOffsetY -= shift
-      boxY -= shift
+      const wantedShift = (boxY + boxH) - height * 0.55
+      const limitedShift = Math.min(wantedShift, maxShiftUp)
+      bgOffsetY -= limitedShift
+      boxY -= limitedShift
     }
-    // Ensure box stays within horizontal bounds
-    // Account for badge width (~5% of canvas) on the right side
+
+    // Horizontal: keep box + badge within canvas
     const badgeAllowance = width * 0.05
     if (boxX < margin) {
-      bgOffsetX = margin - boxX
-      boxX = margin
+      const wantedShift = margin - boxX
+      bgOffsetX = Math.min(wantedShift, maxShiftRight)
+      boxX += bgOffsetX
     }
     if (boxX + boxW + badgeAllowance > width - margin) {
-      const shift = (boxX + boxW + badgeAllowance) - (width - margin)
-      bgOffsetX -= shift
-      boxX -= shift
+      const wantedShift = (boxX + boxW + badgeAllowance) - (width - margin)
+      const limitedShift = Math.min(wantedShift, maxShiftLeft)
+      bgOffsetX -= limitedShift
+      boxX -= limitedShift
     }
   } else {
     if (template === "half-face") {
