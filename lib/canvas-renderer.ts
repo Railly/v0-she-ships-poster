@@ -153,27 +153,22 @@ export function renderPoster(
   canvas.width = width
   canvas.height = height
 
-  // Inset padding so bg.png decorative borders are visible around the edges
-  const PAD = Math.round(width * 0.012) // ~12px at 1080w
-
-  // Cover coordinates for the speaker image within the padded inner area
-  const innerW = width - PAD * 2
-  const innerH = height - PAD * 2
-  const cover = getCoverCoords(image.width, image.height, innerW, innerH)
+  // Full-bleed: no padding — bg.png sits on top as a frame
+  const cover = getCoverCoords(image.width, image.height, width, height)
 
   // ── 1) Dark base fill ───────────────────────────────────────────
   ctx.fillStyle = "#111111"
   ctx.fillRect(0, 0, width, height)
 
-  // ── 2) Speaker image as blurred B&W background, INSIDE padded area
+  // ── 2) Speaker image as blurred B&W background, full bleed
   {
     const bgOff = document.createElement("canvas")
-    bgOff.width = innerW
-    bgOff.height = innerH
+    bgOff.width = width
+    bgOff.height = height
     const bgCtx = bgOff.getContext("2d")!
 
     bgCtx.fillStyle = "#111111"
-    bgCtx.fillRect(0, 0, innerW, innerH)
+    bgCtx.fillRect(0, 0, width, height)
 
     const blurPad = filter.bgBlur * 2
     bgCtx.filter = `grayscale(100%) blur(${filter.bgBlur}px) brightness(0.3)`
@@ -181,17 +176,16 @@ export function renderPoster(
       image,
       cover.sx, cover.sy, cover.sw, cover.sh,
       -blurPad, -blurPad,
-      innerW + blurPad * 2,
-      innerH + blurPad * 2
+      width + blurPad * 2,
+      height + blurPad * 2
     )
     bgCtx.filter = "none"
 
-    // Draw the blurred speaker into the padded inner area
-    ctx.drawImage(bgOff, PAD, PAD)
+    ctx.drawImage(bgOff, 0, 0)
   }
 
-  // Background grain (only on inner area)
-  tileGrain(ctx, PAD, PAD, innerW, innerH, filter.bgGrain)
+  // Background grain
+  tileGrain(ctx, 0, 0, width, height, filter.bgGrain)
 
   // ── 3) Determine crop region based on template ─────────────────
   let cropRegion: FaceBox
@@ -203,10 +197,10 @@ export function renderPoster(
   const clamped = clampBox(cropRegion, image.width, image.height)
 
   // ── 4) Compute box position & size ─────────────────────────────
-  const boxMarginRight = innerW * 0.04
-  const boxMaxWidth = innerW * 0.48
-  const boxMaxHeight = innerH * 0.52
-  const boxTopOffset = PAD + innerH * 0.06
+  const boxMarginRight = width * 0.04
+  const boxMaxWidth = width * 0.48
+  const boxMaxHeight = height * 0.52
+  const boxTopOffset = height * 0.06
 
   let boxX: number, boxY: number, boxWidth: number, boxHeight: number
 
@@ -214,10 +208,10 @@ export function renderPoster(
     // Map face crop to its real position in the poster
     const mapped = imgToCanvas(
       clamped.x, clamped.y, clamped.width, clamped.height,
-      innerW, innerH, cover
+      width, height, cover
     )
-    boxX = mapped.x + PAD
-    boxY = mapped.y + PAD
+    boxX = mapped.x
+    boxY = mapped.y
     boxWidth = mapped.w
     boxHeight = mapped.h
   } else {
@@ -230,7 +224,7 @@ export function renderPoster(
       boxHeight = boxMaxHeight
       boxWidth = boxMaxHeight * cropAspect
     }
-    boxX = PAD + innerW - boxWidth - boxMarginRight
+    boxX = width - boxWidth - boxMarginRight
     boxY = boxTopOffset
   }
 
@@ -288,21 +282,33 @@ export function renderPoster(
   }
 
   // ── 7) Small portrait — same grayscale + tint filter ───────────
-  const portraitSize = width * 0.19
-  const portraitX = PAD + innerW * 0.06
+  // Portrait: fit within a max area while preserving aspect ratio
+  const portraitMaxW = width * 0.19
+  const portraitMaxH = height * 0.19
+  const imgAspect = image.width / image.height
+  let portraitW: number, portraitH: number
+  if (imgAspect > portraitMaxW / portraitMaxH) {
+    portraitW = portraitMaxW
+    portraitH = portraitMaxW / imgAspect
+  } else {
+    portraitH = portraitMaxH
+    portraitW = portraitMaxH * imgAspect
+  }
+
+  const portraitX = width * 0.06
   const portraitY = filter.overlay
-    ? Math.max(boxY + boxHeight + innerH * 0.03, PAD + innerH * 0.5)
-    : PAD + innerH * 0.55
+    ? Math.max(boxY + boxHeight + height * 0.03, height * 0.5)
+    : height * 0.55
 
   {
     const tintedPortrait = renderGrayscaleTinted(
       image,
       0, 0, image.width, image.height,
-      portraitSize, portraitSize,
+      portraitW, portraitH,
       filter
     )
     ctx.drawImage(tintedPortrait, portraitX, portraitY)
-    tileGrain(ctx, portraitX, portraitY, portraitSize, portraitSize, filter.faceGrain)
+    tileGrain(ctx, portraitX, portraitY, portraitW, portraitH, filter.faceGrain)
 
     // Green brackets
     const bracketPad = 8
@@ -310,7 +316,7 @@ export function renderPoster(
     ctx.strokeStyle = "#4ade80"
     ctx.lineWidth = 2
 
-    const trX = portraitX + portraitSize + bracketPad
+    const trX = portraitX + portraitW + bracketPad
     const trY = portraitY - bracketPad
     ctx.beginPath()
     ctx.moveTo(trX - bracketLen, trY)
@@ -319,7 +325,7 @@ export function renderPoster(
     ctx.stroke()
 
     const blX = portraitX - bracketPad
-    const blY = portraitY + portraitSize + bracketPad
+    const blY = portraitY + portraitH + bracketPad
     ctx.beginPath()
     ctx.moveTo(blX + bracketLen, blY)
     ctx.lineTo(blX, blY)
@@ -339,7 +345,7 @@ export function renderPoster(
   }
 
   // ── 9) Smart text layout (drawn AFTER bg.png so text is readable)
-  const textLeftX = PAD + innerW * 0.06
+  const textLeftX = width * 0.06
 
   const badgeOuterRight = boxX + boxWidth + width * 0.042
   const boxLeftEdge = boxX
@@ -349,7 +355,7 @@ export function renderPoster(
   const textMaxWidth = Math.max(rightObstacle - textLeftX - width * 0.04, width * 0.25)
 
   // ── 9a) Event title — semibold ─────────────────────────────────
-  let titleY = PAD + innerH * 0.15
+  let titleY = height * 0.15
   const titleFontSize = Math.round(width * 0.042)
   ctx.fillStyle = "#ffffff"
   ctx.font = `600 ${titleFontSize}px "Geist Mono", monospace`
@@ -374,7 +380,7 @@ export function renderPoster(
   }
 
   // ── 9c) Speaker name — WHITE, large ────────────────────────────
-  const portraitBottomY = portraitY + portraitSize
+  const portraitBottomY = portraitY + portraitH
   const nameY = portraitBottomY + height * 0.07
   const nameFontSize = Math.round(width * 0.065)
   ctx.fillStyle = "#ffffff"
