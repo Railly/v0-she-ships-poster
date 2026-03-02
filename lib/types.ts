@@ -43,6 +43,7 @@ export type TemplateType = "half-face" | "eyes" | "overlay"
 export interface PosterOptions {
   speaker: SpeakerData
   image: HTMLImageElement
+  bgImage?: HTMLImageElement | null
   detection: FaceDetectionResult
   template: TemplateType
   filter: FilterSettings

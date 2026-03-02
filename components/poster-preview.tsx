@@ -12,6 +12,7 @@ import { renderPoster } from "@/lib/canvas-renderer"
 interface PosterPreviewProps {
   speaker: SpeakerData
   image: HTMLImageElement | null
+  bgImage: HTMLImageElement | null
   detection: FaceDetectionResult | null
   template: TemplateType
   filter: FilterSettings
@@ -24,6 +25,7 @@ const POSTER_H = 1350
 export function PosterPreview({
   speaker,
   image,
+  bgImage,
   detection,
   template,
   filter,
@@ -39,6 +41,7 @@ export function PosterPreview({
       renderPoster(exportCanvas, {
         speaker,
         image,
+        bgImage,
         detection,
         template,
         filter,
@@ -59,7 +62,7 @@ export function PosterPreview({
       ctx.clearRect(0, 0, displayW, displayH)
       ctx.drawImage(exportCanvas, 0, 0, displayW, displayH)
     }
-  }, [speaker, image, detection, template, filter, exportCanvasRef])
+  }, [speaker, image, bgImage, detection, template, filter, exportCanvasRef])
 
   useEffect(() => {
     draw()

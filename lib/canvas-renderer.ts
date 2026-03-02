@@ -119,7 +119,6 @@ function drawFaceCropGrayscaleTinted(
   destH: number,
   filter: FilterSettings
 ) {
-  // 1) Draw cropped face to offscreen canvas with grayscale
   const off = document.createElement("canvas")
   off.width = Math.ceil(destW)
   off.height = Math.ceil(destH)
@@ -129,30 +128,23 @@ function drawFaceCropGrayscaleTinted(
   offCtx.filter = "grayscale(100%)"
   offCtx.drawImage(
     image,
-    srcBox.x,
-    srcBox.y,
-    srcBox.width,
-    srcBox.height,
-    0,
-    0,
-    destW,
-    destH
+    srcBox.x, srcBox.y, srcBox.width, srcBox.height,
+    0, 0, destW, destH
   )
   offCtx.filter = "none"
 
-  // 2) Color tint on top with multiply
+  // Color tint on top with multiply
   offCtx.globalCompositeOperation = "multiply"
   offCtx.fillStyle = hexToRgba(filter.faceTintHex, filter.faceTintOpacity)
   offCtx.fillRect(0, 0, destW, destH)
   offCtx.globalCompositeOperation = "source-over"
 
-  // 3) Lighter screen layer for depth
+  // Lighter screen layer for depth
   offCtx.globalCompositeOperation = "screen"
   offCtx.fillStyle = hexToRgba(filter.faceTintHex, 0.12)
   offCtx.fillRect(0, 0, destW, destH)
   offCtx.globalCompositeOperation = "source-over"
 
-  // 4) Draw to main context
   ctx.drawImage(off, destX, destY)
 }
 
@@ -161,7 +153,7 @@ export function renderPoster(
   canvas: HTMLCanvasElement,
   options: PosterOptions
 ): void {
-  const { speaker, image, detection, template, filter, width, height } = options
+  const { speaker, image, bgImage, detection, template, filter, width, height } = options
   const ctx = canvas.getContext("2d")!
   canvas.width = width
   canvas.height = height
@@ -170,7 +162,7 @@ export function renderPoster(
   ctx.fillStyle = "#141414"
   ctx.fillRect(0, 0, width, height)
 
-  // ── 2) Background: B&W + blur + darkened full face ──────────────
+  // ── 2) Background: B&W + blur + darkened full speaker image ─────
   const bgOff = document.createElement("canvas")
   bgOff.width = width
   bgOff.height = height
@@ -180,34 +172,36 @@ export function renderPoster(
   bgCtx.filter = `grayscale(100%) blur(${filter.bgBlur}px) brightness(0.35)`
   bgCtx.drawImage(
     image,
-    cover.sx,
-    cover.sy,
-    cover.sw,
-    cover.sh,
-    0,
-    0,
-    width,
-    height
+    cover.sx, cover.sy, cover.sw, cover.sh,
+    0, 0, width, height
   )
   bgCtx.filter = "none"
 
   ctx.drawImage(bgOff, 0, 0)
 
-  // grain overlay on background
+  // Grain overlay on background
   tileGrain(ctx, 0, 0, width, height, filter.bgGrain)
 
-  // ── 3) Face crop box — depends on template ─────────────────────
+  // ── 3) Overlay bg.jpeg on top (has all decorations baked in) ────
+  if (bgImage) {
+    const bgCover = getCoverCoords(bgImage.width, bgImage.height, width, height)
+    ctx.drawImage(
+      bgImage,
+      bgCover.sx, bgCover.sy, bgCover.sw, bgCover.sh,
+      0, 0, width, height
+    )
+  }
+
+  // ── 4) Face crop box — depends on template ─────────────────────
   const boxMarginRight = width * 0.04
   const boxMaxWidth = width * 0.48
   const boxMaxHeight = height * 0.52
   const boxTopOffset = height * 0.06
 
-  // Get the crop region from face detection
   let cropRegion: FaceBox
   if (template === "eyes") {
     cropRegion = detection.eyesRegion
   } else {
-    // half-face and overlay both use the right-half crop for the BOX
     cropRegion = detection.rightHalfBox
   }
   const clamped = clampBox(cropRegion, image.width, image.height)
@@ -215,22 +209,17 @@ export function renderPoster(
   let boxX: number, boxY: number, boxWidth: number, boxHeight: number
 
   if (template === "overlay") {
-    // ── OVERLAY: position the box exactly where the face maps onto the poster
+    // Position the box exactly where the face maps onto the poster
     const mapped = imgToCanvas(
-      clamped.x,
-      clamped.y,
-      clamped.width,
-      clamped.height,
-      width,
-      height,
-      cover
+      clamped.x, clamped.y, clamped.width, clamped.height,
+      width, height, cover
     )
     boxX = mapped.x
     boxY = mapped.y
     boxWidth = mapped.w
     boxHeight = mapped.h
   } else {
-    // ── HALF-FACE / EYES: right-side box preserving aspect ratio
+    // Right-side box preserving aspect ratio
     const cropAspect = clamped.width / clamped.height
     if (cropAspect > boxMaxWidth / boxMaxHeight) {
       boxWidth = boxMaxWidth
@@ -249,25 +238,19 @@ export function renderPoster(
   ctx.rect(boxX, boxY, boxWidth, boxHeight)
   ctx.clip()
   drawFaceCropGrayscaleTinted(
-    ctx,
-    image,
-    clamped,
-    boxX,
-    boxY,
-    boxWidth,
-    boxHeight,
+    ctx, image, clamped,
+    boxX, boxY, boxWidth, boxHeight,
     filter
   )
-  // Grain on the face crop
   tileGrain(ctx, boxX, boxY, boxWidth, boxHeight, filter.faceGrain)
   ctx.restore()
 
-  // Border around box using accent color
+  // Border around box
   ctx.strokeStyle = filter.accentColor
   ctx.lineWidth = 2
   ctx.strokeRect(boxX, boxY, boxWidth, boxHeight)
 
-  // ── 4) Badge at top-right corner of the box ────────────────────
+  // ── 5) Badge flush to top-right corner of the box ──────────────
   const badgeText = speaker.badgeLabel.toUpperCase()
   const badgeFontSize = Math.round(width * 0.016)
   ctx.font = `bold ${badgeFontSize}px "Geist", sans-serif`
@@ -276,17 +259,16 @@ export function renderPoster(
   const badgeW = width * 0.042
   const badgeH = badgeTextWidth + badgeFontSize * 2.5
 
-  // Badge sits flush with the top-right corner of the box
-  // Right edge of badge aligns with right edge of box
-  // Top of badge aligns with top edge of box
-  const badgeCenterX = boxX + boxWidth - badgeW / 2
-  const badgeCenterY = boxY + badgeH / 2
+  // Badge sits flush: right edge = box right edge, top edge = box top edge
+  const badgeX = boxX + boxWidth - badgeW
+  const badgeY = boxY
 
   ctx.save()
-  ctx.translate(badgeCenterX, badgeCenterY)
   ctx.fillStyle = filter.accentColor
-  ctx.fillRect(-badgeW / 2, -badgeH / 2, badgeW, badgeH)
+  ctx.fillRect(badgeX, badgeY, badgeW, badgeH)
 
+  // Rotated text inside badge
+  ctx.translate(badgeX + badgeW / 2, badgeY + badgeH / 2)
   ctx.rotate(-Math.PI / 2)
   ctx.fillStyle = "#1a1a1a"
   ctx.font = `bold ${badgeFontSize}px "Geist", sans-serif`
@@ -295,10 +277,9 @@ export function renderPoster(
   ctx.fillText(badgeText, 0, 0)
   ctx.restore()
 
-  // ── 5) Small portrait with green brackets ──────────────────────
+  // ── 6) Small portrait with green brackets ──────────────────────
   const portraitSize = width * 0.2
   const portraitX = width * 0.1
-  // Smart placement: portrait sits below the box if overlay, otherwise at 55%
   const portraitY =
     template === "overlay"
       ? Math.max(boxY + boxHeight + height * 0.03, height * 0.5)
@@ -329,49 +310,8 @@ export function renderPoster(
   ctx.lineTo(blX, blY - bracketLen)
   ctx.stroke()
 
-  // ── 6) Logo area ("SS" + sheep) ────────────────────────────────
-  const logoY = height * 0.035
-  ctx.textAlign = "center"
-
-  ctx.fillStyle = "#ffffff"
-  ctx.font = `bold ${Math.round(width * 0.04)}px "Geist Mono", monospace`
-  ctx.fillText("SS", width * 0.42, logoY + width * 0.04)
-
-  const sheepX = width * 0.48
-  const sheepY = logoY + width * 0.015
-  const sheepSize = width * 0.03
-  ctx.fillStyle = "#4ade80"
-  ctx.beginPath()
-  ctx.arc(sheepX, sheepY + sheepSize * 0.4, sheepSize * 0.45, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.beginPath()
-  ctx.arc(
-    sheepX + sheepSize * 0.35,
-    sheepY + sheepSize * 0.15,
-    sheepSize * 0.22,
-    0,
-    Math.PI * 2
-  )
-  ctx.fill()
-  ctx.fillRect(
-    sheepX - sheepSize * 0.25,
-    sheepY + sheepSize * 0.7,
-    sheepSize * 0.08,
-    sheepSize * 0.3
-  )
-  ctx.fillRect(
-    sheepX + sheepSize * 0.15,
-    sheepY + sheepSize * 0.7,
-    sheepSize * 0.08,
-    sheepSize * 0.3
-  )
-
   // ── 7) Smart text layout ───────────────────────────────────────
-  // Determine the text zone: always to the LEFT of the box
-  // For overlay, the box can be anywhere so we need to adapt
-
   const textLeftX = width * 0.1
-  // Available width for title text = from left margin to box left edge (with gap)
   const textMaxWidth =
     template === "overlay"
       ? Math.min(boxX - textLeftX - width * 0.04, width * 0.5)
@@ -385,12 +325,7 @@ export function renderPoster(
   ctx.textAlign = "left"
 
   const availTitleWidth = Math.max(textMaxWidth, width * 0.3)
-  const titleLines = wrapText(
-    ctx,
-    speaker.eventTitle.toUpperCase(),
-    availTitleWidth,
-    titleFontSize
-  )
+  const titleLines = wrapText(ctx, speaker.eventTitle.toUpperCase(), availTitleWidth)
   for (const line of titleLines) {
     ctx.fillText(line, textLeftX, titleY)
     titleY += titleFontSize * 1.25
@@ -409,14 +344,12 @@ export function renderPoster(
   }
 
   // ── 7c) Speaker name (large, accent color) ────────────────────
-  // Position it below the portrait
   const nameY = portraitY + portraitSize + height * 0.07
   const nameFontSize = Math.round(width * 0.065)
   ctx.fillStyle = filter.accentColor
   ctx.font = `900 ${nameFontSize}px "Geist", sans-serif`
   ctx.textAlign = "left"
 
-  // Smart name wrapping: if the name overflows the poster, wrap it
   const nameMaxWidth = width * 0.8
   const nameWords = speaker.name.toUpperCase().split(" ")
   let currentNameY = nameY
@@ -444,47 +377,11 @@ export function renderPoster(
   ctx.fillStyle = "#ffffff"
   ctx.font = `${roleFontSize}px "Geist", sans-serif`
   ctx.letterSpacing = "2px"
-  const roleLines = wrapText(
-    ctx,
-    speaker.role.toUpperCase(),
-    width * 0.5,
-    roleFontSize
-  )
+  const roleLines = wrapText(ctx, speaker.role.toUpperCase(), width * 0.5)
   for (let i = 0; i < roleLines.length; i++) {
     ctx.fillText(roleLines[i], textLeftX, roleY + i * roleFontSize * 1.5)
   }
   ctx.letterSpacing = "0px"
-
-  // ── 8) Side text (rotated) ────────────────────────────────────
-  const sideTextFont = `${Math.round(width * 0.013)}px "Geist Mono", monospace`
-
-  ctx.save()
-  ctx.translate(width * 0.025, height * 0.5)
-  ctx.rotate(-Math.PI / 2)
-  ctx.fillStyle = "rgba(255,255,255,0.35)"
-  ctx.font = sideTextFont
-  ctx.textAlign = "center"
-  ctx.letterSpacing = "3px"
-  ctx.fillText(speaker.sideTextLeft.toUpperCase(), 0, 0)
-  ctx.letterSpacing = "0px"
-  ctx.restore()
-
-  ctx.save()
-  ctx.translate(width * 0.975, height * 0.5)
-  ctx.rotate(Math.PI / 2)
-  ctx.fillStyle = "rgba(255,255,255,0.35)"
-  ctx.font = sideTextFont
-  ctx.textAlign = "center"
-  ctx.letterSpacing = "3px"
-  ctx.fillText(speaker.sideTextRight.toUpperCase(), 0, 0)
-  ctx.letterSpacing = "0px"
-  ctx.restore()
-
-  // ── 9) Crosshair decorations ──────────────────────────────────
-  drawCrosshair(ctx, width * 0.04, height * 0.04, width * 0.02)
-  drawCrosshair(ctx, width * 0.96, height * 0.04, width * 0.02)
-  drawCrosshair(ctx, width * 0.04, height * 0.96, width * 0.02)
-  drawCrosshair(ctx, width * 0.96, height * 0.96, width * 0.02)
 }
 
 // ── Export as PNG blob ──────────────────────────────────────────────
@@ -505,8 +402,7 @@ export function exportPoster(canvas: HTMLCanvasElement): Promise<Blob> {
 function wrapText(
   ctx: CanvasRenderingContext2D,
   text: string,
-  maxWidth: number,
-  _fontSize: number
+  maxWidth: number
 ): string[] {
   const words = text.split(" ")
   const lines: string[] = []
@@ -524,29 +420,4 @@ function wrapText(
   }
   if (currentLine) lines.push(currentLine)
   return lines
-}
-
-// ── Utility: draw crosshair ─────────────────────────────────────────
-function drawCrosshair(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  size: number
-) {
-  ctx.strokeStyle = "rgba(255,255,255,0.2)"
-  ctx.lineWidth = 1
-
-  ctx.beginPath()
-  ctx.moveTo(x - size, y)
-  ctx.lineTo(x + size, y)
-  ctx.stroke()
-
-  ctx.beginPath()
-  ctx.moveTo(x, y - size)
-  ctx.lineTo(x, y + size)
-  ctx.stroke()
-
-  ctx.beginPath()
-  ctx.arc(x, y, size * 0.6, 0, Math.PI * 2)
-  ctx.stroke()
 }

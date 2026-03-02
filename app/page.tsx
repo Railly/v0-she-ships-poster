@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useCallback } from "react"
+import { useState, useRef, useCallback, useEffect } from "react"
 import { PosterForm } from "@/components/poster-form"
 import { PosterPreview } from "@/components/poster-preview"
 import { PosterControls } from "@/components/poster-controls"
@@ -32,10 +32,21 @@ const DEFAULT_FILTER: FilterSettings = {
   accentColor: "#E49BC2",
 }
 
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.crossOrigin = "anonymous"
+    img.onload = () => resolve(img)
+    img.onerror = reject
+    img.src = src
+  })
+}
+
 export default function PosterGeneratorPage() {
   const [speaker, setSpeaker] = useState<SpeakerData>(DEFAULT_SPEAKER)
   const [filter, setFilter] = useState<FilterSettings>(DEFAULT_FILTER)
   const [image, setImage] = useState<HTMLImageElement | null>(null)
+  const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null)
   const [detection, setDetection] = useState<FaceDetectionResult | null>(null)
   const [template, setTemplate] = useState<TemplateType>("half-face")
   const [isProcessing, setIsProcessing] = useState(false)
@@ -45,13 +56,55 @@ export default function PosterGeneratorPage() {
 
   const exportCanvasRef = useRef<HTMLCanvasElement>(null)
 
+  // Preload bg.jpeg and larissa.png on mount
+  useEffect(() => {
+    let cancelled = false
+
+    async function preload() {
+      setIsProcessing(true)
+      setModelStatus("loading")
+
+      try {
+        // Load both images in parallel
+        const [bgImg, speakerImg] = await Promise.all([
+          loadImage("/bg.jpeg"),
+          loadImage("/larissa.png"),
+        ])
+
+        if (cancelled) return
+
+        setBgImage(bgImg)
+        setImage(speakerImg)
+
+        // Run face detection on the preloaded speaker image
+        const result = await detectFace(speakerImg)
+        if (cancelled) return
+
+        if (result) {
+          setDetection(result)
+          setModelStatus("ready")
+        } else {
+          setModelStatus("error")
+        }
+      } catch {
+        if (!cancelled) setModelStatus("error")
+      } finally {
+        if (!cancelled) setIsProcessing(false)
+      }
+    }
+
+    preload()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const handleImageUpload = useCallback(async (file: File) => {
     setIsProcessing(true)
     setModelStatus("loading")
 
     const img = new Image()
     img.crossOrigin = "anonymous"
-
     const url = URL.createObjectURL(file)
     img.src = url
 
@@ -59,9 +112,9 @@ export default function PosterGeneratorPage() {
       setImage(img)
       try {
         const result = await detectFace(img)
-        setModelStatus("ready")
         if (result) {
           setDetection(result)
+          setModelStatus("ready")
         } else {
           setModelStatus("error")
         }
@@ -171,6 +224,7 @@ export default function PosterGeneratorPage() {
           <PosterPreview
             speaker={speaker}
             image={image}
+            bgImage={bgImage}
             detection={detection}
             template={template}
             filter={filter}
