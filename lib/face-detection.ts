@@ -73,11 +73,11 @@ export async function detectFace(
     height: box.height,
   }
 
-  // Right half of the face (with some padding)
+  // Right half of the face — a thin vertical slice
   const rightHalfBox: FaceBox = {
-    x: box.x + box.width * 0.35,
+    x: box.x + box.width * 0.5,
     y: box.y - box.height * 0.15,
-    width: box.width * 0.75,
+    width: box.width * 0.55,
     height: box.height * 1.3,
   }
 
