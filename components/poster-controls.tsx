@@ -1,6 +1,6 @@
 "use client"
 
-import { Download, Eye, ScanFace, Layers, Loader2 } from "lucide-react"
+import { Download, Eye, ScanFace, Loader2 } from "lucide-react"
 import type { TemplateType, FilterSettings } from "@/lib/types"
 
 interface PosterControlsProps {
@@ -29,7 +29,7 @@ export function PosterControls({
   isProcessing,
   canExport,
 }: PosterControlsProps) {
-  const updateFilter = (key: keyof FilterSettings, value: number | string) => {
+  const updateFilter = (key: keyof FilterSettings, value: number | string | boolean) => {
     onFilterChange({ ...filter, [key]: value })
   }
 
@@ -40,7 +40,7 @@ export function PosterControls({
         Template
       </h2>
 
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
           onClick={() => onTemplateChange("half-face")}
@@ -65,17 +65,31 @@ export function PosterControls({
           <Eye className="h-5 w-5" />
           Eyes Only
         </button>
+      </div>
+
+      {/* Overlay toggle */}
+      <div className="flex items-center justify-between rounded border border-[#333] bg-[#1a1a1a] px-4 py-3">
+        <div>
+          <span className="text-xs font-mono uppercase tracking-wider text-[#a0a0a0]">
+            Overlay Mode
+          </span>
+          <p className="text-[10px] font-mono text-[#555] mt-0.5">
+            Match crop position to real face location
+          </p>
+        </div>
         <button
           type="button"
-          onClick={() => onTemplateChange("overlay")}
-          className={`flex flex-col items-center gap-2 rounded border px-3 py-3 text-[10px] font-mono uppercase tracking-wider transition-colors cursor-pointer ${
-            template === "overlay"
-              ? "border-[#E49BC2] bg-[#E49BC2]/10 text-[#E49BC2]"
-              : "border-[#333] bg-[#1a1a1a] text-[#a0a0a0] hover:border-[#555]"
+          onClick={() => updateFilter("overlay", !filter.overlay)}
+          className={`relative w-10 h-5 rounded-full transition-colors cursor-pointer ${
+            filter.overlay ? "bg-[#E49BC2]" : "bg-[#333]"
           }`}
         >
-          <Layers className="h-5 w-5" />
-          Overlay
+          <span
+            className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-[#f0f0f0] transition-transform ${
+              filter.overlay ? "translate-x-5" : "translate-x-0"
+            }`}
+          />
+          <span className="sr-only">Toggle overlay mode</span>
         </button>
       </div>
 
@@ -164,7 +178,7 @@ export function PosterControls({
             value={filter.faceTintHex}
             onChange={(e) => updateFilter("faceTintHex", e.target.value)}
             className={hexInputClass}
-            placeholder="#9A7E8E"
+            placeholder="#934370"
           />
         </div>
       </div>

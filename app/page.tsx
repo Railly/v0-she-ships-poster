@@ -27,9 +27,10 @@ const DEFAULT_FILTER: FilterSettings = {
   bgBlur: 14,
   bgGrain: 0.12,
   faceGrain: 0.15,
-  faceTintHex: "#9A7E8E",
+  faceTintHex: "#934370",
   faceTintOpacity: 0.65,
   accentColor: "#E49BC2",
+  overlay: false,
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -49,6 +50,7 @@ export default function PosterGeneratorPage() {
   const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null)
   const [detection, setDetection] = useState<FaceDetectionResult | null>(null)
   const [template, setTemplate] = useState<TemplateType>("half-face")
+
   const [isProcessing, setIsProcessing] = useState(false)
   const [modelStatus, setModelStatus] = useState<
     "idle" | "loading" | "ready" | "error"
