@@ -5,6 +5,16 @@ export interface SpeakerData {
   eventDate: string
   sideTextLeft: string
   sideTextRight: string
+  badgeLabel: string
+}
+
+export interface FilterSettings {
+  bgBlur: number        // 0-40, default 14
+  bgGrain: number       // 0-1, default 0.12
+  faceGrain: number     // 0-1, default 0.15
+  faceTintHex: string   // default "#9A7E8E"
+  faceTintOpacity: number // 0-1, default 0.65
+  accentColor: string   // default "#E49BC2"
 }
 
 export interface FaceBox {
@@ -35,6 +45,7 @@ export interface PosterOptions {
   image: HTMLImageElement
   detection: FaceDetectionResult
   template: TemplateType
+  filter: FilterSettings
   width: number
   height: number
 }

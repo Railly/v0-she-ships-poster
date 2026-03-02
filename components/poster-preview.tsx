@@ -1,7 +1,12 @@
 "use client"
 
 import { useEffect, useRef, useCallback } from "react"
-import type { SpeakerData, FaceDetectionResult, TemplateType } from "@/lib/types"
+import type {
+  SpeakerData,
+  FaceDetectionResult,
+  TemplateType,
+  FilterSettings,
+} from "@/lib/types"
 import { renderPoster } from "@/lib/canvas-renderer"
 
 interface PosterPreviewProps {
@@ -9,6 +14,7 @@ interface PosterPreviewProps {
   image: HTMLImageElement | null
   detection: FaceDetectionResult | null
   template: TemplateType
+  filter: FilterSettings
   exportCanvasRef: React.RefObject<HTMLCanvasElement | null>
 }
 
@@ -20,6 +26,7 @@ export function PosterPreview({
   image,
   detection,
   template,
+  filter,
   exportCanvasRef,
 }: PosterPreviewProps) {
   const displayCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -27,7 +34,6 @@ export function PosterPreview({
   const draw = useCallback(() => {
     if (!image || !detection) return
 
-    // Draw on the export canvas (full res)
     const exportCanvas = exportCanvasRef.current
     if (exportCanvas) {
       renderPoster(exportCanvas, {
@@ -35,12 +41,12 @@ export function PosterPreview({
         image,
         detection,
         template,
+        filter,
         width: POSTER_W,
         height: POSTER_H,
       })
     }
 
-    // Draw a scaled-down version on the display canvas
     const displayCanvas = displayCanvasRef.current
     if (displayCanvas && exportCanvas) {
       const dpr = window.devicePixelRatio || 1
@@ -53,13 +59,12 @@ export function PosterPreview({
       ctx.clearRect(0, 0, displayW, displayH)
       ctx.drawImage(exportCanvas, 0, 0, displayW, displayH)
     }
-  }, [speaker, image, detection, template, exportCanvasRef])
+  }, [speaker, image, detection, template, filter, exportCanvasRef])
 
   useEffect(() => {
     draw()
   }, [draw])
 
-  // Redraw on window resize for the display canvas
   useEffect(() => {
     const handleResize = () => draw()
     window.addEventListener("resize", handleResize)
@@ -74,7 +79,7 @@ export function PosterPreview({
             No preview yet
           </div>
           <div className="text-[#444] font-mono text-xs">
-            Upload a speaker photo to generate the poster
+            Upload a photo to generate the poster
           </div>
         </div>
       </div>

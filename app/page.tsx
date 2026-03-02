@@ -6,7 +6,12 @@ import { PosterPreview } from "@/components/poster-preview"
 import { PosterControls } from "@/components/poster-controls"
 import { detectFace } from "@/lib/face-detection"
 import { exportPoster } from "@/lib/canvas-renderer"
-import type { SpeakerData, FaceDetectionResult, TemplateType } from "@/lib/types"
+import type {
+  SpeakerData,
+  FaceDetectionResult,
+  TemplateType,
+  FilterSettings,
+} from "@/lib/types"
 
 const DEFAULT_SPEAKER: SpeakerData = {
   name: "Catherine Romani",
@@ -15,10 +20,21 @@ const DEFAULT_SPEAKER: SpeakerData = {
   eventDate: "Jueves 5\nde Marzo\n3 P.M",
   sideTextLeft: "Crafter Station x The Glitch Girls",
   sideTextRight: "Conversatin x The Glitch Girls",
+  badgeLabel: "PARTICIPANTE",
+}
+
+const DEFAULT_FILTER: FilterSettings = {
+  bgBlur: 14,
+  bgGrain: 0.12,
+  faceGrain: 0.15,
+  faceTintHex: "#9A7E8E",
+  faceTintOpacity: 0.65,
+  accentColor: "#E49BC2",
 }
 
 export default function PosterGeneratorPage() {
   const [speaker, setSpeaker] = useState<SpeakerData>(DEFAULT_SPEAKER)
+  const [filter, setFilter] = useState<FilterSettings>(DEFAULT_FILTER)
   const [image, setImage] = useState<HTMLImageElement | null>(null)
   const [detection, setDetection] = useState<FaceDetectionResult | null>(null)
   const [template, setTemplate] = useState<TemplateType>("half-face")
@@ -90,7 +106,7 @@ export default function PosterGeneratorPage() {
         <div className="mx-auto flex max-w-7xl items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1 font-mono text-lg font-bold text-[#f0f0f0]">
-              <span className="text-[#e891b9]">SS</span>
+              <span className="text-[#E49BC2]">SS</span>
               <svg
                 className="h-5 w-5 text-[#4ade80]"
                 viewBox="0 0 24 24"
@@ -113,8 +129,8 @@ export default function PosterGeneratorPage() {
             </span>
           )}
           {modelStatus === "loading" && (
-            <span className="text-xs font-mono text-[#e891b9] flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-[#e891b9] animate-pulse" />
+            <span className="text-xs font-mono text-[#E49BC2] flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#E49BC2] animate-pulse" />
               Loading models...
             </span>
           )}
@@ -130,7 +146,7 @@ export default function PosterGeneratorPage() {
       {/* Main content */}
       <main className="mx-auto flex max-w-7xl flex-col lg:flex-row gap-8 p-6">
         {/* Left panel: form + controls */}
-        <div className="flex flex-col gap-8 lg:w-[360px] shrink-0">
+        <div className="flex flex-col gap-8 lg:w-[360px] shrink-0 overflow-y-auto max-h-[calc(100vh-80px)] pb-8 pr-2">
           <PosterForm
             speaker={speaker}
             onSpeakerChange={setSpeaker}
@@ -141,6 +157,8 @@ export default function PosterGeneratorPage() {
             <PosterControls
               template={template}
               onTemplateChange={setTemplate}
+              filter={filter}
+              onFilterChange={setFilter}
               onExport={handleExport}
               isProcessing={isProcessing}
               canExport={canExport}
@@ -155,6 +173,7 @@ export default function PosterGeneratorPage() {
             image={image}
             detection={detection}
             template={template}
+            filter={filter}
             exportCanvasRef={exportCanvasRef}
           />
         </div>
