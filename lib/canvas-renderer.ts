@@ -124,23 +124,59 @@ function renderGrayscaleTinted(
   off.height = Math.ceil(destH)
   const offCtx = off.getContext("2d")!
 
-  // Step 1: Draw grayscale
   offCtx.filter = "grayscale(100%)"
   offCtx.drawImage(image, srcX, srcY, srcW, srcH, 0, 0, destW, destH)
   offCtx.filter = "none"
 
-  // Step 2: Color tint via multiply blend
   offCtx.globalCompositeOperation = "multiply"
   offCtx.fillStyle = hexToRgba(filter.faceTintHex, filter.faceTintOpacity)
   offCtx.fillRect(0, 0, destW, destH)
 
-  // Step 3: Lighten slightly with screen for depth
   offCtx.globalCompositeOperation = "screen"
   offCtx.fillStyle = hexToRgba(filter.faceTintHex, 0.1)
   offCtx.fillRect(0, 0, destW, destH)
   offCtx.globalCompositeOperation = "source-over"
 
   return off
+}
+
+// ── Helper: draw blurred B&W speaker image at exact position ────────
+function drawBlurredBg(
+  ctx: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  cover: { sx: number; sy: number; sw: number; sh: number },
+  width: number,
+  height: number,
+  blur: number,
+  offsetX: number,
+  offsetY: number
+) {
+  const pad = Math.max(blur * 3, 40)
+  const bigW = width + pad * 2
+  const bigH = height + pad * 2
+
+  // Step A: draw sharp image at exact 1:1 cover-fit position + offset
+  const sharpOff = document.createElement("canvas")
+  sharpOff.width = bigW
+  sharpOff.height = bigH
+  const sharpCtx = sharpOff.getContext("2d")!
+  sharpCtx.drawImage(
+    image,
+    cover.sx, cover.sy, cover.sw, cover.sh,
+    pad + offsetX, pad + offsetY, width, height
+  )
+
+  // Step B: blur + grayscale + darken
+  const blurOff = document.createElement("canvas")
+  blurOff.width = bigW
+  blurOff.height = bigH
+  const blurCtx = blurOff.getContext("2d")!
+  blurCtx.filter = `grayscale(100%) blur(${blur}px) brightness(0.3)`
+  blurCtx.drawImage(sharpOff, 0, 0)
+  blurCtx.filter = "none"
+
+  // Step C: crop poster-sized area back
+  ctx.drawImage(blurOff, pad, pad, width, height, 0, 0, width, height)
 }
 
 // ── Main render function ────────────────────────────────────────────
@@ -153,10 +189,9 @@ export function renderPoster(
   canvas.width = width
   canvas.height = height
 
-  // Cover-fit coordinates (fixed, never mutated)
   const cover = getCoverCoords(image.width, image.height, width, height)
 
-  // ── 3) Determine crop region based on template ─────────────────
+  // ── 1) Determine crop region based on template ─────────────────
   let cropRegion: FaceBox
   if (template === "eyes") {
     cropRegion = detection.eyesRegion
@@ -167,47 +202,41 @@ export function renderPoster(
   }
   const clamped = clampBox(cropRegion, image.width, image.height)
 
-  // ── 4) Compute box position & size ─────────────────────────────
+  // ── 2) Compute box position & size ─────────────────────────────
   const boxMargin = width * 0.04
   const boxMaxWidth = width * 0.48
-  const boxMaxHeight = height * 0.45
-  const safeTop = height * 0.13
-  const safeBottom = height * 0.62 // top of "bottom zone" (portrait+name)
+  const boxMaxHeight = height * 0.40
+  const safeTop = height * 0.12
+  const textZoneHeight = height * 0.22 // guaranteed space for name+role
+  const safeBottom = height - textZoneHeight
 
   let boxX: number, boxY: number, boxWidth: number, boxHeight: number
-  // Canvas-space offset applied to BOTH the background and overlay box
-  // to shift the entire scene so the face region lands in the safe zone
   let bgOffsetY = 0
   let bgOffsetX = 0
 
   if (filter.overlay) {
-    // Map face crop to its natural position (no offset yet)
     const natural = imgToCanvas(
       clamped.x, clamped.y, clamped.width, clamped.height,
       width, height, cover
     )
 
-    // Calculate canvas-space shift needed to bring box into safe zone
+    // Compute offset to push face into the safe zone
     if (natural.y < safeTop) {
       bgOffsetY = safeTop - natural.y
     } else if (natural.y + natural.h > safeBottom) {
       bgOffsetY = safeBottom - (natural.y + natural.h)
     }
-
-    // Horizontal shift
     if (natural.x < boxMargin) {
       bgOffsetX = boxMargin - natural.x
     } else if (natural.x + natural.w > width - boxMargin) {
       bgOffsetX = (width - boxMargin) - (natural.x + natural.w)
     }
 
-    // Apply offset to get final box position
     boxX = natural.x + bgOffsetX
     boxY = natural.y + bgOffsetY
     boxWidth = natural.w
     boxHeight = natural.h
   } else {
-    // Standard positioning: crop box on the right side
     const cropAspect = clamped.width / clamped.height
     if (cropAspect > boxMaxWidth / boxMaxHeight) {
       boxWidth = boxMaxWidth
@@ -220,60 +249,22 @@ export function renderPoster(
     boxY = safeTop
   }
 
-  // ── 1) Dark base fill ───────────────────────────────────────────
+  // ── 3) Dark base + blurred background ──────────────────────────
   ctx.fillStyle = "#111111"
   ctx.fillRect(0, 0, width, height)
 
-  // ── 2) Speaker image as blurred B&W background
-  // Draw at cover-fit + bgOffset. To avoid black gaps, we scale the
-  // image up slightly (1.3x) and center the extra around the offset
-  // draw position so edges are always filled with image pixels.
-  {
-    const pad = Math.max(filter.bgBlur * 3, 40)
-    const bigW = width + pad * 2
-    const bigH = height + pad * 2
+  // First: draw a full-bleed base layer (no offset) to fill the entire canvas
+  drawBlurredBg(ctx, image, cover, width, height, filter.bgBlur, 0, 0)
 
-    const overscale = 1.3
-    const scaledW = width * overscale
-    const scaledH = height * overscale
-    // Center the overscaled image so there's extra on all sides
-    const baseX = (width - scaledW) / 2 + bgOffsetX
-    const baseY = (height - scaledH) / 2 + bgOffsetY
-
-    const sharpOff = document.createElement("canvas")
-    sharpOff.width = bigW
-    sharpOff.height = bigH
-    const sharpCtx = sharpOff.getContext("2d")!
-    sharpCtx.fillStyle = "#111111"
-    sharpCtx.fillRect(0, 0, bigW, bigH)
-    sharpCtx.drawImage(
-      image,
-      cover.sx, cover.sy, cover.sw, cover.sh,
-      pad + baseX, pad + baseY, scaledW, scaledH
-    )
-
-    // Apply blur + grayscale
-    const blurOff = document.createElement("canvas")
-    blurOff.width = bigW
-    blurOff.height = bigH
-    const blurCtx = blurOff.getContext("2d")!
-    blurCtx.fillStyle = "#111111"
-    blurCtx.fillRect(0, 0, bigW, bigH)
-    blurCtx.filter = `grayscale(100%) blur(${filter.bgBlur}px) brightness(0.3)`
-    blurCtx.drawImage(sharpOff, 0, 0)
-    blurCtx.filter = "none"
-
-    ctx.drawImage(
-      blurOff,
-      pad, pad, width, height,
-      0, 0, width, height
-    )
+  // Second: if we have an offset, overdraw with the shifted version
+  // The base layer fills any gaps, the shifted layer provides alignment
+  if (bgOffsetX !== 0 || bgOffsetY !== 0) {
+    drawBlurredBg(ctx, image, cover, width, height, filter.bgBlur, bgOffsetX, bgOffsetY)
   }
 
-  // Background grain
   tileGrain(ctx, 0, 0, width, height, filter.bgGrain)
 
-  // ── 5) Draw the grayscale + tinted face crop into box ──────────
+  // ── 4) Draw the grayscale + tinted face crop into box ──────────
   {
     const tintedCrop = renderGrayscaleTinted(
       image,
@@ -281,7 +272,6 @@ export function renderPoster(
       boxWidth, boxHeight,
       filter
     )
-
     ctx.save()
     ctx.beginPath()
     ctx.rect(boxX, boxY, boxWidth, boxHeight)
@@ -296,7 +286,7 @@ export function renderPoster(
   ctx.lineWidth = 2
   ctx.strokeRect(boxX, boxY, boxWidth, boxHeight)
 
-  // ── 6) Badge label — OUTSIDE box, touching top-right corner ────
+  // ── 5) Badge label — OUTSIDE box, touching top-right corner ────
   {
     const badgeText = speaker.badgeLabel.toUpperCase()
     const badgeFontSize = Math.round(width * 0.016)
@@ -308,14 +298,12 @@ export function renderPoster(
     const badgeW = width * 0.042
     const badgeH = badgeTextW + badgePadY * 2
 
-    // Badge left edge = box right edge (extends outward)
     const badgeX = boxX + boxWidth
     const badgeY = boxY
 
     ctx.save()
     ctx.fillStyle = filter.accentColor
     ctx.fillRect(badgeX, badgeY, badgeW, badgeH)
-
     ctx.translate(badgeX + badgeW / 2, badgeY + badgeH / 2)
     ctx.rotate(-Math.PI / 2)
     ctx.fillStyle = "#1a1a1a"
@@ -326,58 +314,72 @@ export function renderPoster(
     ctx.restore()
   }
 
-  // ── 7) Small portrait — same row as detected box, on its LEFT ──
-  // Size the portrait to fit in the space left of the box
-  const portraitMaxW = Math.min(width * 0.15, boxX - width * 0.12)
-  const portraitMaxH = Math.min(height * 0.15, boxHeight * 0.7)
+  // ── 6) Small portrait — smart layout ───────────────────────────
+  // Try positioning below the box first. If it pushes text out of canvas,
+  // place it at the same row (left of box) instead.
+  const portraitScale = width * 0.14
   const imgAspect = image.width / image.height
   let portraitW: number, portraitH: number
-  if (imgAspect > portraitMaxW / portraitMaxH) {
-    portraitW = Math.max(portraitMaxW, 80)
-    portraitH = portraitW / imgAspect
+  if (imgAspect > 1) {
+    portraitW = portraitScale
+    portraitH = portraitScale / imgAspect
   } else {
-    portraitH = Math.max(portraitMaxH, 80)
-    portraitW = portraitH * imgAspect
+    portraitH = portraitScale
+    portraitW = portraitScale * imgAspect
   }
 
-  // Place portrait to the left of the box, vertically aligned to box bottom
-  const portraitX = width * 0.06
-  const portraitY = boxY + boxHeight - portraitH
+  const boxBottom = boxY + boxHeight
+  const textLeftX = width * 0.06
+  const nameFontSize = Math.round(width * 0.075)
+  const roleFontSize = Math.round(width * 0.026)
+  // Estimate total text height: name (1-2 lines) + role (1-2 lines)
+  const estimatedTextH = nameFontSize * 2.2 + roleFontSize * 3
+  const portraitGap = height * 0.02
+  const textGap = height * 0.03
+
+  // Option A: portrait below box, text below portrait
+  const optionA_portraitY = boxBottom + portraitGap
+  const optionA_textBottom = optionA_portraitY + portraitH + textGap + estimatedTextH
+
+  let portraitX: number, portraitY: number
+
+  if (optionA_textBottom < height * 0.96) {
+    // It fits below the box
+    portraitX = textLeftX
+    portraitY = optionA_portraitY
+  } else {
+    // Move portrait to same row as box (left side)
+    portraitX = textLeftX
+    portraitY = boxBottom - portraitH
+  }
 
   {
     const tintedPortrait = renderGrayscaleTinted(
-      image,
-      0, 0, image.width, image.height,
-      portraitW, portraitH,
-      filter
+      image, 0, 0, image.width, image.height,
+      portraitW, portraitH, filter
     )
     ctx.drawImage(tintedPortrait, portraitX, portraitY)
     tileGrain(ctx, portraitX, portraitY, portraitW, portraitH, filter.faceGrain)
 
     // Green brackets
-    const bracketPad = 8
-    const bracketLen = 14
+    const bPad = 8, bLen = 14
     ctx.strokeStyle = "#4ade80"
     ctx.lineWidth = 2
 
-    const trX = portraitX + portraitW + bracketPad
-    const trY = portraitY - bracketPad
     ctx.beginPath()
-    ctx.moveTo(trX - bracketLen, trY)
-    ctx.lineTo(trX, trY)
-    ctx.lineTo(trX, trY + bracketLen)
+    ctx.moveTo(portraitX + portraitW + bPad - bLen, portraitY - bPad)
+    ctx.lineTo(portraitX + portraitW + bPad, portraitY - bPad)
+    ctx.lineTo(portraitX + portraitW + bPad, portraitY - bPad + bLen)
     ctx.stroke()
 
-    const blX = portraitX - bracketPad
-    const blY = portraitY + portraitH + bracketPad
     ctx.beginPath()
-    ctx.moveTo(blX + bracketLen, blY)
-    ctx.lineTo(blX, blY)
-    ctx.lineTo(blX, blY - bracketLen)
+    ctx.moveTo(portraitX - bPad + bLen, portraitY + portraitH + bPad)
+    ctx.lineTo(portraitX - bPad, portraitY + portraitH + bPad)
+    ctx.lineTo(portraitX - bPad, portraitY + portraitH + bPad - bLen)
     ctx.stroke()
   }
 
-  // ── 8) Overlay bg.png ON TOP of everything (frame layer) ───────
+  // ── 7) Overlay bg.png frame layer ──────────────────────────────
   if (bgImage) {
     const bgCover = getCoverCoords(bgImage.width, bgImage.height, width, height)
     ctx.drawImage(
@@ -387,26 +389,25 @@ export function renderPoster(
     )
   }
 
-  // ── 9) Text layout — name + role below the box ─────────────────
-  const textLeftX = width * 0.06
+  // ── 8) Name + role text — always anchored to bottom zone ───────
+  // Calculate the start Y from the bottom of the portrait
+  const nameStartY = Math.max(
+    portraitY + portraitH + textGap,
+    boxBottom + textGap
+  )
 
-  // Speaker name — WHITE, large, right below box with gap
-  const boxBottom = boxY + boxHeight
-  const nameY = boxBottom + height * 0.06
-  const nameFontSize = Math.round(width * 0.075)
   ctx.fillStyle = "#ffffff"
   ctx.font = `900 ${nameFontSize}px "Geist", sans-serif`
   ctx.textAlign = "left"
 
   const nameMaxWidth = width * 0.88
   const nameWords = speaker.name.toUpperCase().split(" ")
-  let currentNameY = nameY
+  let currentNameY = nameStartY
   let currentNameLine = ""
 
   for (const word of nameWords) {
     const testLine = currentNameLine ? `${currentNameLine} ${word}` : word
-    const testWidth = ctx.measureText(testLine).width
-    if (testWidth > nameMaxWidth && currentNameLine) {
+    if (ctx.measureText(testLine).width > nameMaxWidth && currentNameLine) {
       ctx.fillText(currentNameLine, textLeftX, currentNameY)
       currentNameY += nameFontSize * 1.1
       currentNameLine = word
@@ -416,17 +417,15 @@ export function renderPoster(
   }
   if (currentNameLine) {
     ctx.fillText(currentNameLine, textLeftX, currentNameY)
-    currentNameY += nameFontSize * 1.05
+    currentNameY += nameFontSize * 0.95
   }
 
-  // Speaker role — green, nearly zero gap from name
-  const roleY = currentNameY
-  const roleFontSize = Math.round(width * 0.026)
+  // Role — green, ZERO extra gap from name baseline
   ctx.fillStyle = "#4ade80"
   ctx.font = `600 ${roleFontSize}px "Geist", sans-serif`
   const roleLines = wrapText(ctx, speaker.role.toUpperCase(), width * 0.7)
   for (let i = 0; i < roleLines.length; i++) {
-    ctx.fillText(roleLines[i], textLeftX, roleY + i * roleFontSize * 1.35)
+    ctx.fillText(roleLines[i], textLeftX, currentNameY + i * roleFontSize * 1.35)
   }
 }
 
@@ -456,8 +455,7 @@ function wrapText(
 
   for (const word of words) {
     const testLine = currentLine ? `${currentLine} ${word}` : word
-    const metrics = ctx.measureText(testLine)
-    if (metrics.width > maxWidth && currentLine) {
+    if (ctx.measureText(testLine).width > maxWidth && currentLine) {
       lines.push(currentLine)
       currentLine = word
     } else {
