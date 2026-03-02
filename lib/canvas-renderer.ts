@@ -107,145 +107,64 @@ function renderGrayscaleTinted(
   return off
 }
 
-// ── LAYOUT HELPERS ──────────────────────────────────────────────────
-
-interface LayoutResult {
-  boxX: number; boxY: number; boxWidth: number; boxHeight: number
-  bgOffsetX: number; bgOffsetY: number
-  // Text zone: absolute Y where name starts, and X margin
-  textX: number; textY: number; textMaxW: number
-  // Portrait position
-  portraitX: number; portraitY: number; portraitW: number; portraitH: number
-}
-
-function computeLayout(
-  template: TemplateType,
-  overlay: boolean,
-  clamped: FaceBox,
+// ── BACKGROUND: draw blurred B&W with offset, filling gaps ──────────
+function drawBackground(
+  ctx: CanvasRenderingContext2D,
   image: HTMLImageElement,
   cover: { sx: number; sy: number; sw: number; sh: number },
-  width: number,
-  height: number
-): LayoutResult {
-  const margin = width * 0.06
-  const imgAspect = image.width / image.height
+  width: number, height: number,
+  bgOffsetX: number, bgOffsetY: number,
+  filter: FilterSettings
+) {
+  ctx.fillStyle = "#111111"
+  ctx.fillRect(0, 0, width, height)
 
-  // Portrait sizing (constant for all templates)
-  const pScale = width * 0.13
-  let pW: number, pH: number
-  if (imgAspect > 1) { pW = pScale; pH = pScale / imgAspect }
-  else { pH = pScale; pW = pScale * imgAspect }
+  // We draw the sharp image TWICE on an offscreen canvas:
+  //   1. Once at (0,0) to fill the entire poster (gap-filler)
+  //   2. Once at (offsetX, offsetY) to align face with overlay box
+  // Then blur the whole thing. The second draw overwrites the first
+  // where they overlap, and the first fills any edge gaps.
 
-  if (template === "half-face") {
-    // ── HALF-FACE: tall thin box on the RIGHT, text on the LEFT ──
-    const cropAspect = clamped.width / clamped.height
-    let bW: number, bH: number
+  const pad = Math.max(filter.bgBlur * 3, 50)
+  const bigW = width + pad * 2
+  const bigH = height + pad * 2
 
-    if (overlay) {
-      const natural = imgToCanvas(
-        clamped.x, clamped.y, clamped.width, clamped.height,
-        width, height, cover
-      )
-      bW = natural.w
-      bH = natural.h
-      // Constrain to max 42% width, 65% height
-      if (bW > width * 0.42) { bH *= (width * 0.42) / bW; bW = width * 0.42 }
-      if (bH > height * 0.65) { bW *= (height * 0.65) / bH; bH = height * 0.65 }
+  const sharpOff = document.createElement("canvas")
+  sharpOff.width = bigW
+  sharpOff.height = bigH
+  const sc = sharpOff.getContext("2d")!
+  sc.fillStyle = "#111111"
+  sc.fillRect(0, 0, bigW, bigH)
 
-      let bX = natural.x
-      let bY = natural.y
-      let offX = 0, offY = 0
+  // Layer 1: full cover at (pad, pad) -- fills entire area, no gaps
+  sc.drawImage(
+    image,
+    cover.sx, cover.sy, cover.sw, cover.sh,
+    pad, pad, width, height
+  )
 
-      // Push into safe zone
-      const safeT = height * 0.10
-      const safeB = height * 0.75
-      if (bY < safeT) { offY = safeT - bY }
-      if (bY + bH > safeB) { offY = safeB - (bY + bH) }
-      if (bX + bW > width - margin) { offX = (width - margin) - (bX + bW) }
-      if (bX < width * 0.45) { offX = width * 0.45 - bX }
-
-      bX += offX; bY += offY
-      const textBottomY = bY + bH + height * 0.02
-      const nameFS = Math.round(width * 0.075)
-      const roleFS = Math.round(width * 0.026)
-
-      return {
-        boxX: bX, boxY: bY, boxWidth: bW, boxHeight: bH,
-        bgOffsetX: offX, bgOffsetY: offY,
-        textX: margin, textY: textBottomY,
-        textMaxW: bX - margin - width * 0.03,
-        portraitX: margin, portraitY: bY + bH - pH,
-        portraitW: pW, portraitH: pH,
-      }
-    } else {
-      // Non-overlay: fixed right-side position
-      bH = height * 0.60
-      bW = bH * cropAspect
-      if (bW > width * 0.40) { bW = width * 0.40; bH = bW / cropAspect }
-      const bX = width - bW - margin
-      const bY = height * 0.10
-
-      return {
-        boxX: bX, boxY: bY, boxWidth: bW, boxHeight: bH,
-        bgOffsetX: 0, bgOffsetY: 0,
-        textX: margin, textY: bY + bH + height * 0.02,
-        textMaxW: bX - margin - width * 0.02,
-        portraitX: margin, portraitY: bY + bH - pH,
-        portraitW: pW, portraitH: pH,
-      }
-    }
-  } else {
-    // ── EYES / SMILE: horizontal box, centered, text below ───────
-    const cropAspect = clamped.width / clamped.height
-
-    if (overlay) {
-      const natural = imgToCanvas(
-        clamped.x, clamped.y, clamped.width, clamped.height,
-        width, height, cover
-      )
-      let bW = natural.w, bH = natural.h
-      // Constrain to max 70% width, 30% height
-      if (bW > width * 0.70) { bH *= (width * 0.70) / bW; bW = width * 0.70 }
-      if (bH > height * 0.30) { bW *= (height * 0.30) / bH; bH = height * 0.30 }
-
-      let bX = natural.x, bY = natural.y
-      let offX = 0, offY = 0
-
-      const safeT = height * 0.10
-      const safeB = height * 0.50
-      if (bY < safeT) { offY = safeT - bY }
-      if (bY + bH > safeB) { offY = safeB - (bY + bH) }
-      // Horizontal: center-ish, but keep in bounds
-      if (bX < margin) { offX = margin - bX }
-      if (bX + bW > width - margin) { offX = (width - margin) - (bX + bW) }
-
-      bX += offX; bY += offY
-
-      return {
-        boxX: bX, boxY: bY, boxWidth: bW, boxHeight: bH,
-        bgOffsetX: offX, bgOffsetY: offY,
-        textX: margin, textY: bY + bH + height * 0.12,
-        textMaxW: width * 0.88,
-        portraitX: margin, portraitY: bY + bH + height * 0.02,
-        portraitW: pW, portraitH: pH,
-      }
-    } else {
-      // Non-overlay: centered horizontal box
-      let bW = width * 0.65, bH = bW / cropAspect
-      if (bH > height * 0.28) { bH = height * 0.28; bW = bH * cropAspect }
-      const bX = (width - bW) / 2
-      const bY = height * 0.12
-
-      return {
-        boxX: bX, boxY: bY, boxWidth: bW, boxHeight: bH,
-        bgOffsetX: 0, bgOffsetY: 0,
-        textX: margin, textY: bY + bH + height * 0.12,
-        textMaxW: width * 0.88,
-        portraitX: margin, portraitY: bY + bH + height * 0.02,
-        portraitW: pW, portraitH: pH,
-      }
-    }
+  // Layer 2: same image at (pad + offset, pad + offset) -- aligns face
+  // This overdraw ONLY matters in the overlapping area (most of the canvas)
+  // and the non-overlapping edges keep the gap-filler from layer 1
+  if (bgOffsetX !== 0 || bgOffsetY !== 0) {
+    sc.drawImage(
+      image,
+      cover.sx, cover.sy, cover.sw, cover.sh,
+      pad + bgOffsetX, pad + bgOffsetY, width, height
+    )
   }
+
+  // Blur + grayscale the combined result
+  const blurOff = document.createElement("canvas")
+  blurOff.width = bigW
+  blurOff.height = bigH
+  const bc = blurOff.getContext("2d")!
+  bc.filter = `grayscale(100%) blur(${filter.bgBlur}px) brightness(0.3)`
+  bc.drawImage(sharpOff, 0, 0)
+  bc.filter = "none"
+
+  // Crop center back to poster
+  ctx.drawImage(blurOff, pad, pad, width, height, 0, 0, width, height)
 }
 
 // ── Main render function ────────────────────────────────────────────
@@ -264,69 +183,94 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
   else cropRegion = detection.rightHalfBox
   const clamped = clampBox(cropRegion, image.width, image.height)
 
-  // Compute layout for this template
-  const L = computeLayout(template, filter.overlay, clamped, image, cover, width, height)
+  // ── COMPUTE BOX POSITION ──────────────────────────────────────
+  const margin = width * 0.06
+  const cropAspect = clamped.width / clamped.height
+  let boxX: number, boxY: number, boxW: number, boxH: number
+  let bgOffsetX = 0, bgOffsetY = 0
 
-  // ── 1) Dark base + blurred B&W background ──────────────────────
-  ctx.fillStyle = "#111111"
-  ctx.fillRect(0, 0, width, height)
-
-  {
-    const pad = Math.max(filter.bgBlur * 3, 40)
-    const bigW = width + pad * 2
-    const bigH = height + pad * 2
-
-    // Draw image sharp first, with offset for overlay alignment
-    // Use the full source image (0, 0, iw, ih) at cover-fit + offset
-    // to guarantee full coverage (no black gaps)
-    const sharpOff = document.createElement("canvas")
-    sharpOff.width = bigW
-    sharpOff.height = bigH
-    const sharpCtx = sharpOff.getContext("2d")!
-    sharpCtx.fillStyle = "#111111"
-    sharpCtx.fillRect(0, 0, bigW, bigH)
-
-    // Draw the full original image at a scale that covers the big canvas
-    // centered on the offset position — this fills ALL gaps naturally
-    const coverBig = getCoverCoords(image.width, image.height, bigW, bigH)
-    sharpCtx.drawImage(
-      image,
-      coverBig.sx, coverBig.sy, coverBig.sw, coverBig.sh,
-      L.bgOffsetX, L.bgOffsetY, bigW, bigH
+  if (filter.overlay) {
+    // Map crop to natural canvas position
+    const nat = imgToCanvas(
+      clamped.x, clamped.y, clamped.width, clamped.height,
+      width, height, cover
     )
+    boxW = nat.w; boxH = nat.h; boxX = nat.x; boxY = nat.y
 
-    // Blur + grayscale
-    const blurOff = document.createElement("canvas")
-    blurOff.width = bigW
-    blurOff.height = bigH
-    const blurCtx = blurOff.getContext("2d")!
-    blurCtx.filter = `grayscale(100%) blur(${filter.bgBlur}px) brightness(0.3)`
-    blurCtx.drawImage(sharpOff, 0, 0)
-    blurCtx.filter = "none"
+    // Template-specific constraints
+    if (template === "half-face") {
+      // Cap width to 40%, height to 60%
+      if (boxW > width * 0.40) { boxH *= (width * 0.40) / boxW; boxW = width * 0.40 }
+      if (boxH > height * 0.60) { boxW *= (height * 0.60) / boxH; boxH = height * 0.60 }
+    } else {
+      // Eyes/smile: cap width to 65%, height to 28%
+      if (boxW > width * 0.65) { boxH *= (width * 0.65) / boxW; boxW = width * 0.65 }
+      if (boxH > height * 0.28) { boxW *= (height * 0.28) / boxH; boxH = height * 0.28 }
+    }
 
-    ctx.drawImage(blurOff, pad, pad, width, height, 0, 0, width, height)
+    // Push into safe zone using offset (so BG moves with box)
+    const safeTop = height * 0.10
+    const safeBottom = height * 0.58
+
+    if (boxY < safeTop) { bgOffsetY = safeTop - boxY }
+    else if (boxY + boxH > safeBottom) { bgOffsetY = safeBottom - (boxY + boxH) }
+
+    if (template === "half-face") {
+      // Keep box on the right side
+      const minLeft = width * 0.48
+      if (boxX < minLeft) bgOffsetX = minLeft - boxX
+      if (boxX + boxW + bgOffsetX > width - margin) {
+        bgOffsetX = (width - margin - boxW) - boxX
+      }
+    } else {
+      // Center horizontally-ish
+      if (boxX < margin) bgOffsetX = margin - boxX
+      if (boxX + boxW + bgOffsetX > width - margin) {
+        bgOffsetX = (width - margin - boxW) - boxX
+      }
+    }
+
+    boxX += bgOffsetX
+    boxY += bgOffsetY
+  } else {
+    // Non-overlay: fixed positions
+    if (template === "half-face") {
+      boxH = height * 0.55
+      boxW = boxH * cropAspect
+      if (boxW > width * 0.38) { boxW = width * 0.38; boxH = boxW / cropAspect }
+      boxX = width - boxW - margin
+      boxY = height * 0.10
+    } else {
+      boxW = width * 0.60
+      boxH = boxW / cropAspect
+      if (boxH > height * 0.25) { boxH = height * 0.25; boxW = boxH * cropAspect }
+      boxX = (width - boxW) / 2
+      boxY = height * 0.12
+    }
   }
+
+  // ── 1) DRAW BACKGROUND ─────────────────────────────────────────
+  drawBackground(ctx, image, cover, width, height, bgOffsetX, bgOffsetY, filter)
   tileGrain(ctx, 0, 0, width, height, filter.bgGrain)
 
-  // ── 2) Tinted face crop box ────────────────────────────────────
-  {
-    const tc = renderGrayscaleTinted(
-      image, clamped.x, clamped.y, clamped.width, clamped.height,
-      L.boxWidth, L.boxHeight, filter
-    )
-    ctx.save()
-    ctx.beginPath()
-    ctx.rect(L.boxX, L.boxY, L.boxWidth, L.boxHeight)
-    ctx.clip()
-    ctx.drawImage(tc, L.boxX, L.boxY)
-    tileGrain(ctx, L.boxX, L.boxY, L.boxWidth, L.boxHeight, filter.faceGrain)
-    ctx.restore()
-  }
+  // ── 2) TINTED FACE CROP BOX ────────────────────────────────────
+  const tc = renderGrayscaleTinted(
+    image, clamped.x, clamped.y, clamped.width, clamped.height,
+    boxW, boxH, filter
+  )
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(boxX, boxY, boxW, boxH)
+  ctx.clip()
+  ctx.drawImage(tc, boxX, boxY)
+  tileGrain(ctx, boxX, boxY, boxW, boxH, filter.faceGrain)
+  ctx.restore()
+
   ctx.strokeStyle = filter.accentColor
   ctx.lineWidth = 2
-  ctx.strokeRect(L.boxX, L.boxY, L.boxWidth, L.boxHeight)
+  ctx.strokeRect(boxX, boxY, boxW, boxH)
 
-  // ── 3) Badge — outside box, top-right corner ───────────────────
+  // ── 3) BADGE — outside box, top-right corner ──────────────────
   {
     const badgeText = speaker.badgeLabel.toUpperCase()
     const badgeFontSize = Math.round(width * 0.016)
@@ -335,8 +279,8 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
     const badgePadY = badgeFontSize * 1.2
     const badgeW = width * 0.042
     const badgeH = textW + badgePadY * 2
-    const badgeX = L.boxX + L.boxWidth
-    const badgeY = L.boxY
+    const badgeX = boxX + boxW
+    const badgeY = boxY
 
     ctx.save()
     ctx.fillStyle = filter.accentColor
@@ -351,29 +295,44 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
     ctx.restore()
   }
 
-  // ── 4) Small portrait (tinted, with green brackets) ────────────
+  // ── 4) PORTRAIT — smart positioning ────────────────────────────
+  // Sizing
+  const imgAspect = image.width / image.height
+  const pScale = width * 0.12
+  let pW: number, pH: number
+  if (imgAspect > 1) { pW = pScale; pH = pScale / imgAspect }
+  else { pH = pScale; pW = pScale * imgAspect }
+
+  // For half-face: portrait on the LEFT, bottom-aligned with box
+  // For eyes/smile: portrait below the box, left side
+  let pX: number, pY: number
+  if (template === "half-face") {
+    pX = margin
+    pY = boxY + boxH - pH
+  } else {
+    pX = margin
+    pY = boxY + boxH + height * 0.02
+  }
+
   {
     const tp = renderGrayscaleTinted(
-      image, 0, 0, image.width, image.height,
-      L.portraitW, L.portraitH, filter
+      image, 0, 0, image.width, image.height, pW, pH, filter
     )
-    ctx.drawImage(tp, L.portraitX, L.portraitY)
-    tileGrain(ctx, L.portraitX, L.portraitY, L.portraitW, L.portraitH, filter.faceGrain)
+    ctx.drawImage(tp, pX, pY)
+    tileGrain(ctx, pX, pY, pW, pH, filter.faceGrain)
 
     const bPad = 8, bLen = 14
     ctx.strokeStyle = "#4ade80"
     ctx.lineWidth = 2
-    // Top-right bracket
     ctx.beginPath()
-    ctx.moveTo(L.portraitX + L.portraitW + bPad - bLen, L.portraitY - bPad)
-    ctx.lineTo(L.portraitX + L.portraitW + bPad, L.portraitY - bPad)
-    ctx.lineTo(L.portraitX + L.portraitW + bPad, L.portraitY - bPad + bLen)
+    ctx.moveTo(pX + pW + bPad - bLen, pY - bPad)
+    ctx.lineTo(pX + pW + bPad, pY - bPad)
+    ctx.lineTo(pX + pW + bPad, pY - bPad + bLen)
     ctx.stroke()
-    // Bottom-left bracket
     ctx.beginPath()
-    ctx.moveTo(L.portraitX - bPad + bLen, L.portraitY + L.portraitH + bPad)
-    ctx.lineTo(L.portraitX - bPad, L.portraitY + L.portraitH + bPad)
-    ctx.lineTo(L.portraitX - bPad, L.portraitY + L.portraitH + bPad - bLen)
+    ctx.moveTo(pX - bPad + bLen, pY + pH + bPad)
+    ctx.lineTo(pX - bPad, pY + pH + bPad)
+    ctx.lineTo(pX - bPad, pY + pH + bPad - bLen)
     ctx.stroke()
   }
 
@@ -383,22 +342,49 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
     ctx.drawImage(bgImage, bgCover.sx, bgCover.sy, bgCover.sw, bgCover.sh, 0, 0, width, height)
   }
 
-  // ── 6) Name + Role text ────────────────────────────────────────
+  // ── 6) NAME + ROLE TEXT ────────────────────────────────────────
+  // Text ALWAYS starts after both the box bottom and portrait bottom
+  // to guarantee it's never clipped and never collides
   const nameFontSize = Math.round(width * 0.075)
   const roleFontSize = Math.round(width * 0.026)
 
+  const textX = margin
+  let textMaxW: number
+  let textStartY: number
+
+  if (template === "half-face") {
+    // Text on the left, constrained to space before the box
+    textMaxW = boxX - margin - width * 0.02
+    // Start below portrait (which is bottom-aligned with box)
+    textStartY = pY + pH + height * 0.03
+  } else {
+    // Text full width, below both box and portrait
+    textMaxW = width * 0.88
+    const bottomMost = Math.max(boxY + boxH, pY + pH)
+    textStartY = bottomMost + height * 0.03
+  }
+
+  // Clamp: if text would go past 92% of height, push it up
+  const maxTextBottom = height * 0.92
+  // Estimate total text height (name ~2 lines + role ~2 lines)
+  const estTextH = nameFontSize * 2.2 + roleFontSize * 3
+  if (textStartY + estTextH > maxTextBottom) {
+    textStartY = maxTextBottom - estTextH
+  }
+
+  // Draw name
   ctx.fillStyle = "#ffffff"
   ctx.font = `900 ${nameFontSize}px "Geist", sans-serif`
   ctx.textAlign = "left"
 
   const nameWords = speaker.name.toUpperCase().split(" ")
-  let curY = L.textY
+  let curY = textStartY
   let curLine = ""
 
   for (const word of nameWords) {
     const test = curLine ? `${curLine} ${word}` : word
-    if (ctx.measureText(test).width > L.textMaxW && curLine) {
-      ctx.fillText(curLine, L.textX, curY)
+    if (ctx.measureText(test).width > textMaxW && curLine) {
+      ctx.fillText(curLine, textX, curY)
       curY += nameFontSize * 1.08
       curLine = word
     } else {
@@ -406,16 +392,16 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
     }
   }
   if (curLine) {
-    ctx.fillText(curLine, L.textX, curY)
-    curY += nameFontSize * 0.85
+    ctx.fillText(curLine, textX, curY)
+    curY += nameFontSize * 0.4  // very tight gap before role
   }
 
-  // Role — immediately after name, ZERO extra gap
+  // Role — nearly zero gap from name
   ctx.fillStyle = "#4ade80"
   ctx.font = `600 ${roleFontSize}px "Geist", sans-serif`
-  const roleLines = wrapText(ctx, speaker.role.toUpperCase(), L.textMaxW)
+  const roleLines = wrapText(ctx, speaker.role.toUpperCase(), textMaxW)
   for (let i = 0; i < roleLines.length; i++) {
-    ctx.fillText(roleLines[i], L.textX, curY + i * roleFontSize * 1.35)
+    ctx.fillText(roleLines[i], textX, curY + i * roleFontSize * 1.35)
   }
 }
 
