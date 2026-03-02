@@ -211,44 +211,61 @@ function sampleEdgeColors(
 }
 
 // ── BACKGROUND: draw with edge-color fill for seamless blending ─────
+// offsetX/offsetY: how many canvas-pixels to shift the BG image
+//   (positive = image moves right/down, i.e. you see more of the top-left)
 function drawBackground(
   ctx: CanvasRenderingContext2D,
   image: HTMLImageElement,
   cover: { sx: number; sy: number; sw: number; sh: number },
   width: number, height: number,
-  filter: FilterSettings
+  filter: FilterSettings,
+  offsetX = 0, offsetY = 0
 ) {
   // Sample edge colors for seamless blending (no more black gaps)
   const edges = sampleEdgeColors(image, cover)
 
-  // Fill the entire canvas with edge-color-aware background
+  // 1. Fill the entire canvas with the average edge color
   ctx.fillStyle = edges.avg
   ctx.fillRect(0, 0, width, height)
 
-  // Draw edge-color gradients to smooth transitions at borders
-  const topGrad = ctx.createLinearGradient(0, 0, 0, height * 0.15)
+  // 2. Draw soft edge-color gradients at borders
+  const topGrad = ctx.createLinearGradient(0, 0, 0, height * 0.2)
   topGrad.addColorStop(0, edges.top)
   topGrad.addColorStop(1, "transparent")
   ctx.fillStyle = topGrad
-  ctx.fillRect(0, 0, width, height * 0.15)
+  ctx.fillRect(0, 0, width, height * 0.2)
 
-  const botGrad = ctx.createLinearGradient(0, height * 0.85, 0, height)
+  const botGrad = ctx.createLinearGradient(0, height * 0.8, 0, height)
   botGrad.addColorStop(0, "transparent")
   botGrad.addColorStop(1, edges.bottom)
   ctx.fillStyle = botGrad
-  ctx.fillRect(0, height * 0.85, width, height * 0.15)
+  ctx.fillRect(0, height * 0.8, width, height * 0.2)
 
-  // Draw image filling the full canvas
+  const leftGrad = ctx.createLinearGradient(0, 0, width * 0.15, 0)
+  leftGrad.addColorStop(0, edges.left)
+  leftGrad.addColorStop(1, "transparent")
+  ctx.fillStyle = leftGrad
+  ctx.fillRect(0, 0, width * 0.15, height)
+
+  const rightGrad = ctx.createLinearGradient(width * 0.85, 0, width, 0)
+  rightGrad.addColorStop(0, "transparent")
+  rightGrad.addColorStop(1, edges.right)
+  ctx.fillStyle = rightGrad
+  ctx.fillRect(width * 0.85, 0, width * 0.15, height)
+
+  // 3. Draw the image at the offset position on an offscreen canvas
+  //    The edge-color fill already covers any gaps caused by the shift
   const sharpOff = document.createElement("canvas")
   sharpOff.width = width
   sharpOff.height = height
   const sc = sharpOff.getContext("2d")!
+  // Pre-fill with edge color so shifted areas blend
   sc.fillStyle = edges.avg
   sc.fillRect(0, 0, width, height)
   sc.drawImage(
     image,
     cover.sx, cover.sy, cover.sw, cover.sh,
-    0, 0, width, height
+    offsetX, offsetY, width, height
   )
 
   if (isFilterUnsupported()) {
@@ -261,9 +278,7 @@ function drawBackground(
     const blurOff = document.createElement("canvas")
     blurOff.width = smallW; blurOff.height = smallH
     const bc = blurOff.getContext("2d")!
-    // Pass 1: shrink
     bc.drawImage(sharpOff, 0, 0, smallW, smallH)
-    // Pass 2: scale back up to intermediate size for smoother result
     const midW = Math.round(width * 0.3)
     const midH = Math.round(height * 0.3)
     const midOff = document.createElement("canvas")
@@ -272,7 +287,6 @@ function drawBackground(
     mc.imageSmoothingEnabled = true
     mc.imageSmoothingQuality = "high"
     mc.drawImage(blurOff, 0, 0, midW, midH)
-    // Final draw
     ctx.imageSmoothingEnabled = true
     ctx.imageSmoothingQuality = "high"
     ctx.drawImage(midOff, 0, 0, width, height)
@@ -304,6 +318,9 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
   const margin = width * 0.06
   const cropAspect = clamped.width / clamped.height
   let boxX: number, boxY: number, boxW: number, boxH: number
+  // Track how much the box moved so we can shift the BG by the same delta
+  let bgShiftX = 0
+  let bgShiftY = 0
 
   if (filter.overlay) {
     // Natural position from imgToCanvas -- matches the BG since both
@@ -314,9 +331,11 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
     )
     boxX = nat.x; boxY = nat.y; boxW = nat.w; boxH = nat.h
 
-    // When autoPosition is ON, just constrain the box to safe zones.
-    // The BG stays static -- we only reposition the overlay box.
+    // When autoPosition is ON, constrain the box to safe zones
+    // AND shift the BG by the same amount so the face stays aligned.
     if (filter.autoPosition) {
+      const origBoxX = boxX
+      const origBoxY = boxY
       const logoZoneBottom = height * 0.10
       const badgeW = width * 0.05
       const textZoneTop = height * 0.58
@@ -335,15 +354,18 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
       }
       // Constrain: keep box from going below the text area
       if (boxY + boxH > textZoneTop) {
-        // Try moving up first
         boxY = textZoneTop - boxH
-        // If that pushes above logo zone, scale down the box
         if (boxY < logoZoneBottom) {
           boxY = logoZoneBottom
           boxH = textZoneTop - logoZoneBottom
           boxW = boxH * cropAspect
         }
       }
+
+      // Compute the delta: how much the box moved from its natural position
+      // The BG shifts by the same amount so the face content stays aligned
+      bgShiftX = boxX - origBoxX
+      bgShiftY = boxY - origBoxY
     }
   } else {
     if (template === "half-face") {
@@ -358,7 +380,7 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
   }
 
   // ── 1) DRAW BACKGROUND ─────────────────────────────────────────
-  drawBackground(ctx, image, cover, width, height, filter)
+  drawBackground(ctx, image, cover, width, height, filter, bgShiftX, bgShiftY)
   tileGrain(ctx, 0, 0, width, height, filter.bgGrain)
 
   // ── 2) TINTED FACE CROP BOX ────────────────────────────────────
