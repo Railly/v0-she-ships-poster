@@ -197,10 +197,11 @@ export function renderPoster(
   const clamped = clampBox(cropRegion, image.width, image.height)
 
   // ── 4) Compute box position & size ─────────────────────────────
-  const boxMarginRight = width * 0.04
+  const boxMargin = width * 0.04
   const boxMaxWidth = width * 0.48
-  const boxMaxHeight = height * 0.52
-  const boxTopOffset = height * 0.06
+  const boxMaxHeight = height * 0.45
+  const minTopMargin = height * 0.10   // never clip above this line
+  const minBottomMargin = height * 0.38 // leave room for portrait + text
 
   let boxX: number, boxY: number, boxWidth: number, boxHeight: number
 
@@ -214,6 +215,20 @@ export function renderPoster(
     boxY = mapped.y
     boxWidth = mapped.w
     boxHeight = mapped.h
+
+    // Clamp box to stay fully inside canvas with margins
+    if (boxY < minTopMargin) {
+      boxY = minTopMargin
+    }
+    if (boxY + boxHeight > height - minBottomMargin) {
+      boxHeight = height - minBottomMargin - boxY
+    }
+    if (boxX < boxMargin) {
+      boxX = boxMargin
+    }
+    if (boxX + boxWidth > width - boxMargin) {
+      boxWidth = width - boxMargin - boxX
+    }
   } else {
     // Standard positioning: crop box on the right side
     const cropAspect = clamped.width / clamped.height
@@ -224,8 +239,8 @@ export function renderPoster(
       boxHeight = boxMaxHeight
       boxWidth = boxMaxHeight * cropAspect
     }
-    boxX = width - boxWidth - boxMarginRight
-    boxY = boxTopOffset
+    boxX = width - boxWidth - boxMargin
+    boxY = minTopMargin
   }
 
   // ── 5) Draw the grayscale + tinted face crop into box ──────────
@@ -282,8 +297,8 @@ export function renderPoster(
   }
 
   // ── 7) Small portrait — same grayscale + tint filter ───────────
-  const portraitMaxW = width * 0.18
-  const portraitMaxH = height * 0.18
+  const portraitMaxW = width * 0.17
+  const portraitMaxH = height * 0.16
   const imgAspect = image.width / image.height
   let portraitW: number, portraitH: number
   if (imgAspect > portraitMaxW / portraitMaxH) {
@@ -294,11 +309,11 @@ export function renderPoster(
     portraitW = portraitMaxH * imgAspect
   }
 
-  // Position portrait in the left area, vertically centered in upper half
+  // Position portrait: always below the crop box with a gap
   const portraitX = width * 0.06
   const portraitY = filter.overlay
-    ? Math.max(boxY + boxHeight + height * 0.04, height * 0.42)
-    : height * 0.38
+    ? Math.max(boxY + boxHeight + height * 0.03, height * 0.40)
+    : height * 0.36
 
   {
     const tintedPortrait = renderGrayscaleTinted(
@@ -346,10 +361,10 @@ export function renderPoster(
   // ── 9) Text layout — name + role only (drawn after bg.png) ────
   const textLeftX = width * 0.06
 
-  // Speaker name — WHITE, large, positioned below portrait
+  // Speaker name — WHITE, large, big gap from portrait
   const portraitBottomY = portraitY + portraitH
-  const nameY = portraitBottomY + height * 0.05
-  const nameFontSize = Math.round(width * 0.065)
+  const nameY = portraitBottomY + height * 0.10
+  const nameFontSize = Math.round(width * 0.075)
   ctx.fillStyle = "#ffffff"
   ctx.font = `900 ${nameFontSize}px "Geist", sans-serif`
   ctx.textAlign = "left"
@@ -372,17 +387,17 @@ export function renderPoster(
   }
   if (currentNameLine) {
     ctx.fillText(currentNameLine, textLeftX, currentNameY)
-    currentNameY += nameFontSize * 1.1
+    currentNameY += nameFontSize * 1.05
   }
 
-  // Speaker role — green, very tight to name
-  const roleY = currentNameY + height * 0.002
-  const roleFontSize = Math.round(width * 0.022)
+  // Speaker role — green, nearly zero gap from name
+  const roleY = currentNameY
+  const roleFontSize = Math.round(width * 0.026)
   ctx.fillStyle = "#4ade80"
-  ctx.font = `500 ${roleFontSize}px "Geist", sans-serif`
-  const roleLines = wrapText(ctx, speaker.role.toUpperCase(), width * 0.6)
+  ctx.font = `600 ${roleFontSize}px "Geist", sans-serif`
+  const roleLines = wrapText(ctx, speaker.role.toUpperCase(), width * 0.7)
   for (let i = 0; i < roleLines.length; i++) {
-    ctx.fillText(roleLines[i], textLeftX, roleY + i * roleFontSize * 1.4)
+    ctx.fillText(roleLines[i], textLeftX, roleY + i * roleFontSize * 1.35)
   }
 }
 
