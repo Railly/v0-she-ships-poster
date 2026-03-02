@@ -107,28 +107,30 @@ function renderGrayscaleTinted(
   return off
 }
 
-// ── BACKGROUND: always full-bleed, no offset, no black gaps ─────────
+// ── BACKGROUND: single draw with optional offset ────────────────────
 function drawBackground(
   ctx: CanvasRenderingContext2D,
   image: HTMLImageElement,
   cover: { sx: number; sy: number; sw: number; sh: number },
   width: number, height: number,
-  filter: FilterSettings
+  filter: FilterSettings,
+  offsetX = 0, offsetY = 0
 ) {
   ctx.fillStyle = "#111111"
   ctx.fillRect(0, 0, width, height)
 
-  // Draw the full image at cover-fit with no offset.
-  // This guarantees: no black gaps, no ghosting, full image coverage.
-  // The box is positioned independently (clamped to safe zone).
+  // Single draw at optional offset. The heavy blur naturally spreads
+  // image pixels into any small edge gap from the offset.
   const sharpOff = document.createElement("canvas")
   sharpOff.width = width
   sharpOff.height = height
   const sc = sharpOff.getContext("2d")!
+  sc.fillStyle = "#111111"
+  sc.fillRect(0, 0, width, height)
   sc.drawImage(
     image,
     cover.sx, cover.sy, cover.sw, cover.sh,
-    0, 0, width, height
+    offsetX, offsetY, width, height
   )
 
   ctx.filter = `grayscale(100%) blur(${filter.bgBlur}px) brightness(0.3)`
@@ -159,16 +161,42 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
   const cropAspect = clamped.width / clamped.height
   let boxX: number, boxY: number, boxW: number, boxH: number
 
+  // Offset applied to BOTH bg and box to keep them aligned
+  let bgOffsetX = 0, bgOffsetY = 0
+
   if (filter.overlay) {
     // Use EXACT natural position + size from imgToCanvas.
     // Both the BG and the box use the same cover coords, so this
-    // guarantees pixel-perfect alignment. No size capping -- the
-    // detection regions already produce reasonable proportions.
+    // guarantees pixel-perfect alignment.
     const nat = imgToCanvas(
       clamped.x, clamped.y, clamped.width, clamped.height,
       width, height, cover
     )
     boxX = nat.x; boxY = nat.y; boxW = nat.w; boxH = nat.h
+
+    // If the box extends above or past canvas edges, shift BOTH
+    // the box and BG by the same amount to keep alignment.
+    const safeTop = height * 0.06
+    if (boxY < safeTop) {
+      bgOffsetY = safeTop - boxY
+      boxY = safeTop
+    }
+    // Ensure box doesn't go below 55% of canvas
+    if (boxY + boxH > height * 0.58) {
+      const shift = (boxY + boxH) - height * 0.58
+      bgOffsetY -= shift
+      boxY -= shift
+    }
+    // Ensure box stays within horizontal bounds
+    if (boxX < margin) {
+      bgOffsetX = margin - boxX
+      boxX = margin
+    }
+    if (boxX + boxW > width - margin) {
+      const shift = (boxX + boxW) - (width - margin)
+      bgOffsetX -= shift
+      boxX -= shift
+    }
   } else {
     if (template === "half-face") {
       boxH = height * 0.55; boxW = boxH * cropAspect
@@ -181,8 +209,8 @@ export function renderPoster(canvas: HTMLCanvasElement, options: PosterOptions):
     }
   }
 
-  // ── 1) DRAW BACKGROUND (full-bleed, no offset) ────────────────
-  drawBackground(ctx, image, cover, width, height, filter)
+  // ── 1) DRAW BACKGROUND ──────────────────────────────────────────
+  drawBackground(ctx, image, cover, width, height, filter, bgOffsetX, bgOffsetY)
   tileGrain(ctx, 0, 0, width, height, filter.bgGrain)
 
   // ── 2) TINTED FACE CROP BOX ────────────────────────────────────
